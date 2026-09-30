@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pickle
 import time
 from dataclasses import asdict
 
@@ -65,14 +66,45 @@ def evaluate(env: KyleMarket, agent, obs: dict, steps: int):
     return log, obs, onpath
 
 
-def train(env: KyleMarket, agent, steps: int, log_every: int = 0, conv_window: int = 0):
-    """Returns (final obs, greedy table snapshot taken `conv_window` steps
-    before the end, or None if the agent has no table)."""
-    obs = env.reset()
+def _save_checkpoint(path: str, state: dict) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as fh:
+        pickle.dump(state, fh, protocol=pickle.HIGHEST_PROTOCOL)
+    os.replace(tmp, path)  # atomic: a crash mid-write never corrupts the checkpoint
+
+
+def train(
+    env: KyleMarket,
+    agent,
+    steps: int,
+    log_every: int = 0,
+    conv_window: int = 0,
+    checkpoint: str = "",
+    checkpoint_every: int = 0,
+):
+    """Returns (env, agent, final obs, greedy table snapshot taken
+    `conv_window` steps before the end or None if the agent has no table).
+
+    With `checkpoint`, the full training state (market, agent, RNGs, step) is
+    saved every `checkpoint_every` steps and training resumes from it if the
+    file exists, so an interrupted run continues bit-for-bit where it stopped.
+    env and agent are returned because resuming replaces them.
+    """
+    start, snap = 0, None
+    if checkpoint and os.path.exists(checkpoint):
+        with open(checkpoint, "rb") as fh:
+            st = pickle.load(fh)
+        env, agent, obs, start, snap = st["env"], st["agent"], st["obs"], st["t"], st["snap"]
+        print(f"  resumed from {checkpoint} at step {start:,}", flush=True)
+    else:
+        obs = env.reset()
     t0 = time.time()
-    snap = None
     snap_at = steps - conv_window if conv_window and hasattr(agent, "greedy_policy") else -1
-    for t in range(steps):
+    for t in range(start, steps):
+        if checkpoint and checkpoint_every and t > start and t % checkpoint_every == 0:
+            _save_checkpoint(
+                checkpoint, {"env": env, "agent": agent, "obs": obs, "t": t, "snap": snap}
+            )
         if t == snap_at:
             snap = agent.greedy_policy().copy()
         a = agent.act(obs, t)
@@ -86,7 +118,7 @@ def train(env: KyleMarket, agent, steps: int, log_every: int = 0, conv_window: i
                 f"({time.time() - t0:.0f}s)",
                 flush=True,
             )
-    return obs, snap
+    return env, agent, obs, snap
 
 
 def run(args) -> dict:
@@ -112,7 +144,10 @@ def run(args) -> dict:
     agent = make_agent(args.algo, env, seed=args.seed + 1, **agent_kw)
 
     t0 = time.time()
-    obs, snap = train(env, agent, args.steps, log_every=args.log_every, conv_window=args.conv_window)
+    env, agent, obs, snap = train(
+        env, agent, args.steps, log_every=args.log_every, conv_window=args.conv_window,
+        checkpoint=args.checkpoint, checkpoint_every=args.checkpoint_every,
+    )
     train_s = time.time() - t0
 
     log, obs, onpath = evaluate(env, agent, obs, args.eval_steps)
@@ -176,6 +211,9 @@ def parse_args(argv=None):
     ap.add_argument("--impulse-reps", type=int, default=0,
                     help="deviation events per session for the punishment test (0 = skip)")
     ap.add_argument("--impulse-horizon", type=int, default=15)
+    ap.add_argument("--checkpoint", type=str, default="",
+                    help="pickle file for periodic training state; resumes from it if present")
+    ap.add_argument("--checkpoint-every", type=int, default=500_000)
     ap.add_argument("--out", type=str, default="")
     return ap.parse_args(argv)
 

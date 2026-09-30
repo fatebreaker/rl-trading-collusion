@@ -28,7 +28,7 @@ import numpy as np
 
 from .theory import Benchmarks, kyle_benchmarks
 
-MEMORY_MODES = ("none", "flow", "residual")
+MEMORY_MODES = ("none", "flow", "residual", "orders")
 
 
 @dataclass
@@ -50,6 +50,10 @@ class MarketConfig:
     #   flow      binned aggregate order flow y_{t-1}
     #   residual  (v_{t-1}, binned y_{t-1} - own x_{t-1}); lets a trader see
     #             what everyone else plus noise traders did
+    #   orders    (v_{t-1}, rivals' exact total order x_{t-1}); perfect
+    #             monitoring, the easiest case for punishment strategies.
+    #             Exact for I = 2 (one bin per grid order); for I > 2 the rivals'
+    #             total is binned on an (I-1)-scaled grid of n_actions points.
     memory: str = "residual"
     n_flow_bins: int = 7
     # Market maker re-estimates lambda with exponentially weighted moments.
@@ -109,12 +113,18 @@ class KyleMarket:
         self._edges_flow = np.linspace(-2, 2, nb + 1)[1:-1] * self.sd_flow
         self._edges_resid = np.linspace(-2, 2, nb + 1)[1:-1] * self.sd_resid
 
+        rival_grid = (cfg.n_informed - 1) * np.linspace(grid.min(), grid.max(), cfg.n_actions)
+        self._edges_rivals = (rival_grid[1:] + rival_grid[:-1]) / 2
+        self.sd_rivals = max((cfg.n_informed - 1) * b.beta_nash * cfg.sigma_v, 1e-12)
+
         if cfg.memory == "none":
             self.n_states = 1
         elif cfg.memory == "flow":
             self.n_states = nb
-        else:
+        elif cfg.memory == "residual":
             self.n_states = cfg.n_values * nb
+        else:
+            self.n_states = cfg.n_values * cfg.n_actions
 
         self.n_actions = cfg.n_actions
         self.n_values = cfg.n_values
@@ -141,6 +151,7 @@ class KyleMarket:
         self.prev_v_idx = self.rng.integers(self.n_values, size=S)
         self.prev_resid = np.zeros((S, I))
         self.prev_flow = np.zeros(S)
+        self.prev_rivals = np.zeros((S, I))
         return self._obs()
 
     def _obs(self) -> dict:
@@ -156,6 +167,13 @@ class KyleMarket:
             ).copy()
             f_prev_v = np.zeros((S, I))
             f_mem = np.broadcast_to((self.prev_flow / self.sd_flow)[:, None], (S, I))
+        elif cfg.memory == "orders":
+            obin = np.digitize(self.prev_rivals, self._edges_rivals)
+            s = self.prev_v_idx[:, None] * cfg.n_actions + obin
+            f_prev_v = np.broadcast_to(
+                (self.values[self.prev_v_idx] / cfg.sigma_v)[:, None], (S, I)
+            )
+            f_mem = self.prev_rivals / self.sd_rivals
         else:
             rbin = np.digitize(self.prev_resid, self._edges_resid)
             s = self.prev_v_idx[:, None] * cfg.n_flow_bins + rbin
@@ -205,5 +223,6 @@ class KyleMarket:
         self.prev_v_idx = self.v_idx
         self.prev_flow = y_obs
         self.prev_resid = y_obs[:, None] - x
+        self.prev_rivals = x.sum(axis=1, keepdims=True) - x
         self.v_idx = self.rng.integers(self.n_values, size=self.S)
         return profit, self._obs(), info

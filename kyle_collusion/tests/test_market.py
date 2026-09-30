@@ -52,7 +52,7 @@ def test_collusive_play_recovers_collusive_outcome():
 
 
 def test_observation_shapes_and_state_range():
-    for mem in ("none", "flow", "residual"):
+    for mem in ("none", "flow", "residual", "orders"):
         env = KyleMarket(MarketConfig(memory=mem), 8, seed=0)
         obs = env.reset()
         for _ in range(50):
@@ -84,3 +84,15 @@ def test_sessions_are_independent():
         _, _, i2 = e2.step_orders(x2)
     assert np.allclose(i1["lam"][1:], i2["lam"][1:])
     assert not np.isclose(i1["lam"][0], i2["lam"][0])
+
+
+def test_orders_memory_sees_rival_order_exactly():
+    env = KyleMarket(MarketConfig(memory="orders"), 16, seed=0)
+    env.reset()
+    for _ in range(20):
+        a = env.rng.integers(env.n_actions, size=(16, 2))
+        _, obs, _ = env.step(a)
+        prev_v = env.prev_v_idx
+        # state = v_prev * n_actions + rival's order index, for each trader
+        assert (obs["s"][:, 0] == prev_v * env.n_actions + a[:, 1]).all()
+        assert (obs["s"][:, 1] == prev_v * env.n_actions + a[:, 0]).all()

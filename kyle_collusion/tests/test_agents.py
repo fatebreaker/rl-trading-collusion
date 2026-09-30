@@ -134,3 +134,22 @@ def test_visit_decay_still_finds_best_response():
     target = env.values / (2 * env.bench.lam_nash)
     step = env.grid[1] - env.grid[0]
     assert (np.abs(greedy - target) <= 0.5 * step + 1e-9).all()
+
+
+def test_checkpoint_resume_is_exact(tmp_path):
+    from kylecollusion.run import train
+
+    def fresh():
+        env = KyleMarket(MarketConfig(memory="orders"), 8, seed=4)
+        return env, TabularQ(env, beta_decay=1e-3, seed=5)
+
+    env, agent = fresh()
+    env, agent, _, _ = train(env, agent, 3000)
+    straight = agent.Q.copy()
+
+    ck = str(tmp_path / "ck.pkl")
+    env, agent = fresh()
+    train(env, agent, 1500, checkpoint=ck, checkpoint_every=1000)  # "crashes" after 1500
+    env, agent = fresh()  # a new process would start from scratch objects
+    env, agent, _, _ = train(env, agent, 3000, checkpoint=ck, checkpoint_every=1000)
+    assert np.array_equal(agent.Q, straight)
