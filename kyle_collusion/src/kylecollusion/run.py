@@ -17,6 +17,7 @@ from dataclasses import asdict
 
 import numpy as np
 
+from .diagnostics import convergence_stats, impulse_response
 from .market import MEMORY_MODES, KyleMarket, MarketConfig
 from .metrics import session_metrics, summarize
 
@@ -39,24 +40,34 @@ def make_agent(algo: str, env: KyleMarket, seed: int, **kw):
     raise ValueError(algo)
 
 
-def evaluate(env: KyleMarket, agent, obs: dict, steps: int) -> tuple[dict, dict]:
+def evaluate(env: KyleMarket, agent, obs: dict, steps: int):
+    """Greedy play with learning frozen. Returns (log, final obs, on-path mask).
+
+    The on-path mask marks (session, trader, state, value) entries visited
+    during greedy play; it is None for agents without a table."""
     keys = ("v", "p", "y", "lam")
     log = {k: np.empty((steps, env.S)) for k in keys}
     log["x"] = np.empty((steps, env.S, env.I))
     log["profit"] = np.empty((steps, env.S, env.I))
+    onpath = None
+    if hasattr(agent, "greedy_policy"):
+        onpath = np.zeros((env.S, env.I, env.n_states, env.n_values), dtype=bool)
+        si, ii = np.arange(env.S)[:, None], np.arange(env.I)[None, :]
     for t in range(steps):
+        if onpath is not None:
+            onpath[si, ii, obs["s"], obs["v_idx"][:, None]] = True
         a = agent.act(obs, t, greedy=True)
         r, obs, info = env.step(a)
         for k in keys:
             log[k][t] = info[k]
         log["x"][t] = info["x"]
         log["profit"][t] = r
-    return log, obs
+    return log, obs, onpath
 
 
 def train(env: KyleMarket, agent, steps: int, log_every: int = 0, conv_window: int = 0):
-    """Returns (final obs, per-session share of the greedy strategy that changed
-    over the last `conv_window` steps, or None if the agent has no table)."""
+    """Returns (final obs, greedy table snapshot taken `conv_window` steps
+    before the end, or None if the agent has no table)."""
     obs = env.reset()
     t0 = time.time()
     snap = None
@@ -75,11 +86,7 @@ def train(env: KyleMarket, agent, steps: int, log_every: int = 0, conv_window: i
                 f"({time.time() - t0:.0f}s)",
                 flush=True,
             )
-    change = None
-    if snap is not None:
-        now = agent.greedy_policy()
-        change = (now != snap).reshape(env.S, -1).mean(1)
-    return obs, change
+    return obs, snap
 
 
 def run(args) -> dict:
@@ -105,14 +112,21 @@ def run(args) -> dict:
     agent = make_agent(args.algo, env, seed=args.seed + 1, **agent_kw)
 
     t0 = time.time()
-    obs, change = train(env, agent, args.steps, log_every=args.log_every, conv_window=args.conv_window)
+    obs, snap = train(env, agent, args.steps, log_every=args.log_every, conv_window=args.conv_window)
     train_s = time.time() - t0
 
-    log, _ = evaluate(env, agent, obs, args.eval_steps)
+    log, obs, onpath = evaluate(env, agent, obs, args.eval_steps)
     per_session = session_metrics(log, env.bench)
-    if change is not None:
-        per_session["policy_change"] = change
+    if snap is not None:
+        per_session.update(convergence_stats(snap, agent.greedy_policy(), onpath, env.grid))
     summary = summarize(per_session)
+
+    impulse = None
+    if args.impulse_reps > 0:
+        impulse = impulse_response(
+            env, agent, obs, horizon=args.impulse_horizon, reps=args.impulse_reps,
+            gamma=getattr(agent, "gamma", 0.95),
+        )
 
     result = {
         "algo": args.algo,
@@ -129,6 +143,8 @@ def run(args) -> dict:
     }
     if hasattr(agent, "epsilon"):
         result["final_epsilon"] = agent.epsilon(args.steps)
+    if impulse is not None:
+        result["impulse"] = impulse
     return result
 
 
@@ -157,6 +173,9 @@ def parse_args(argv=None):
     ap.add_argument("--log-every", type=int, default=0)
     ap.add_argument("--conv-window", type=int, default=100_000,
                     help="measure greedy-strategy changes over the last N training steps (tabular only)")
+    ap.add_argument("--impulse-reps", type=int, default=0,
+                    help="deviation events per session for the punishment test (0 = skip)")
+    ap.add_argument("--impulse-horizon", type=int, default=15)
     ap.add_argument("--out", type=str, default="")
     return ap.parse_args(argv)
 
@@ -179,9 +198,24 @@ def main(argv=None):
     for k in ("delta_profit", "delta_intensity", "delta_info"):
         print(f"{k:<18}{s[k]['mean']:>12.3f}{s[k]['ci95']:>9.3f}   (0 = Nash, 1 = collusion)")
     print(f"{'order_r2':<18}{s['order_r2']['mean']:>12.3f}{s['order_r2']['ci95']:>9.3f}   (1 = orders depend on v only)")
-    if "policy_change" in s:
-        print(f"{'policy_change':<18}{s['policy_change']['mean']:>12.4f}{s['policy_change']['ci95']:>9.4f}"
-              f"   (share of strategy changed in last {args.conv_window:,} steps)")
+    for k, note in (
+        ("policy_change", "all table entries"),
+        ("policy_change_onpath", "entries used in greedy play"),
+        ("order_shift_onpath", "mean |order change| on-path, grid steps"),
+    ):
+        if k in s:
+            print(f"{k:<22}{s[k]['mean']:>8.4f}{s[k]['ci95']:>9.4f}   "
+                  f"({note}, last {args.conv_window:,} steps)")
+    imp = res.get("impulse")
+    if imp:
+        print(f"\npunishment test: {imp['n_events']} deviation events "
+              f"({imp['share_deviated']:.0%} of draws changed the deviator's order)")
+        print("lag   rival d_beta          deviator d_profit")
+        for k in range(min(8, imp["horizon"] + 1)):
+            print(f"{k:>3}   {imp['d_beta_rival'][k]:>+7.4f} ± {imp['d_beta_rival_ci95'][k]:.4f}"
+                  f"   {imp['d_profit_dev'][k]:>+7.4f} ± {imp['d_profit_dev_ci95'][k]:.4f}")
+        print(f"deviator gain: period 0 {imp['gain_dev_period0']:+.4f}, discounted over "
+              f"{imp['horizon'] + 1} periods {imp['cum_gain_dev']:+.4f} ± {imp['cum_gain_dev_ci95']:.4f}")
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w") as fh:

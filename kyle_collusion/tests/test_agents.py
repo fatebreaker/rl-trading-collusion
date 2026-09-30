@@ -95,3 +95,42 @@ def test_make_agent_rejects_unknown():
     env = KyleMarket(MarketConfig(), 2)
     with pytest.raises(ValueError):
         make_agent("sarsa", env, 0)
+
+
+def test_visit_decay_schedule():
+    env = KyleMarket(MarketConfig(), 2, seed=0)
+    with pytest.raises(ValueError):
+        TabularQ(env, alpha_schedule="linear")
+    agent = TabularQ(env, alpha=0.2, alpha_schedule="visits", alpha_kappa=10, alpha_power=1.0)
+    obs = env.reset()
+    a = np.zeros((2, 2), dtype=int)
+    idx = (agent._si, agent._ii, obs["s"], obs["v_idx"][:, None], a)
+    r = np.ones((2, 2))
+    # Repeated identical updates of one entry: step n uses alpha / (1 + n/10).
+    q0 = agent.Q[idx].copy()
+    target = r + agent.gamma * agent._rows(obs).max(-1)
+    agent.observe(obs, a, r, obs, 0)
+    assert np.allclose(agent.Q[idx], q0 + 0.2 * (target - q0))
+    assert (agent.visits[idx] == 1).all()
+    for _ in range(9):
+        agent.observe(obs, a, r, obs, 0)
+    assert (agent.visits[idx] == 10).all()
+
+
+def test_visit_decay_still_finds_best_response():
+    from dataclasses import replace
+
+    cfg = MarketConfig(n_informed=1, memory="none", mm_fixed=True, n_actions=41)
+    env = KyleMarket(cfg, 8, seed=0)
+    env.cfg = replace(cfg, sigma_u=0.0)
+    agent = TabularQ(env, alpha=0.5, gamma=0.0, beta_decay=1e-4, alpha_schedule="visits", seed=1)
+    obs = env.reset()
+    for t in range(40_000):
+        a = agent.act(obs, t)
+        r, obs2, _ = env.step(a)
+        agent.observe(obs, a, r, obs2, t)
+        obs = obs2
+    greedy = env.grid[agent.greedy_policy()[:, 0, 0]]
+    target = env.values / (2 * env.bench.lam_nash)
+    step = env.grid[1] - env.grid[0]
+    assert (np.abs(greedy - target) <= 0.5 * step + 1e-9).all()
