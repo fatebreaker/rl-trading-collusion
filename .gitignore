@@ -10,3 +10,4 @@ data/
 trajectories/
 results/
 .env
+kyle_collusion/results/**/*.log
