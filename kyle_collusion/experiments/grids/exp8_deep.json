@@ -1,0 +1,11 @@
+{
+  "name": "exp8_deep",
+  "base": ["--sessions", "50", "--steps", "400000", "--eval-steps", "20000", "--memory", "residual",
+           "--impulse-reps", "20", "--log-every", "100000", "--checkpoint-every", "100000"],
+  "runs": {
+    "dqn_g095": ["--algo", "dqn", "--agent-kwargs", "{\"beta_decay\": 1.5e-5}"],
+    "dqn_g0": ["--algo", "dqn", "--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 1.5e-5}"],
+    "ppo_g095": ["--algo", "ppo"],
+    "ppo_g0": ["--algo", "ppo", "--gamma", "0"]
+  }
+}

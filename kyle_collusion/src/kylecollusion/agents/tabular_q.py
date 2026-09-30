@@ -11,6 +11,13 @@ profits a constant step keeps estimates jittering, so greedy choices among
 near-equivalent orders never settle. "visits" decays the step per table entry,
 alpha_n = max(alpha_min, alpha * (1 + n / kappa) ** -power), where n counts
 updates of that entry (Robbins-Monro conditions hold for power in (0.5, 1]).
+
+Update target: "taken" is standard Q-learning, which only learns about the
+order actually submitted. "counterfactual" updates every order at once with
+the profit it would have earned (Asker, Fershtman & Pakes's synchronous
+learning). In a Kyle market this is exact, because the price is linear in the
+trader's own order; it requires a memory state that does not depend on the
+trader's own order (none or residual), so all orders share one next state.
 """
 
 from __future__ import annotations
@@ -33,8 +40,13 @@ class TabularQ:
         alpha_kappa: float = 50.0,
         alpha_power: float = 0.7,
         alpha_min: float = 0.0,
+        update: str = "taken",
         seed: int = 0,
     ):
+        if update not in ("taken", "counterfactual"):
+            raise ValueError("update must be 'taken' or 'counterfactual'")
+        if update == "counterfactual" and env.cfg.memory not in ("none", "residual"):
+            raise ValueError("counterfactual updates need memory 'none' or 'residual'")
         if alpha_schedule not in ("const", "visits"):
             raise ValueError("alpha_schedule must be 'const' or 'visits'")
         self.env = env
@@ -45,6 +57,7 @@ class TabularQ:
         self.alpha_kappa = alpha_kappa
         self.alpha_power = alpha_power
         self.alpha_min = alpha_min
+        self.update = update
         self.rng = np.random.default_rng(seed)
 
         S, I = env.S, env.I
@@ -79,6 +92,12 @@ class TabularQ:
         return a
 
     def observe(self, obs, a, r, obs2, t) -> None:
+        if self.update == "counterfactual":
+            cont = self.gamma * self._rows(obs2).max(axis=-1)  # (S, I)
+            target = self.env.counterfactual_profits() + cont[..., None]  # (S, I, A)
+            rows = (self._si, self._ii, obs["s"], obs["v_idx"][:, None])
+            self.Q[rows] += self.alpha * (target - self.Q[rows])
+            return
         target = r + self.gamma * self._rows(obs2).max(axis=-1)
         idx = (self._si, self._ii, obs["s"], obs["v_idx"][:, None], a)
         if self.visits is None:

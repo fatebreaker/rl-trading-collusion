@@ -23,8 +23,13 @@ import sys
 
 
 def expand(spec: dict) -> list[tuple[str, list[str]]]:
+    """Grid spec -> [(tag, args)]. A spec may instead (or also) give "runs":
+    {tag: [extra args]} for named one-off configurations."""
+    runs = [(tag, list(spec.get("base", [])) + list(extra))
+            for tag, extra in spec.get("runs", {}).items()]
+    if "grid" not in spec:
+        return runs
     keys = list(spec["grid"])
-    runs = []
     for combo in itertools.product(*(spec["grid"][k] for k in keys)):
         labels = spec.get("labels", {})
         tag = "_".join(

@@ -180,6 +180,20 @@ class KyleMarket:
             self.prev_rival_idx = np.zeros((self.S, self.I), dtype=np.int64)
             self.prev_price = np.zeros(self.S)
 
+    def counterfactual_profits(self) -> np.ndarray:
+        """(S, I, n_actions) profit each trader would have made last period with
+        each order on its grid, holding everyone else's orders and the noise
+        fixed. Exact: the price rule is linear in the trader's own order."""
+        lp = self.last_pricing
+        v_idx = self.prev_v_idx
+        grid = self.grid_v[v_idx]  # (S, n_actions)
+        rest = lp["y"][:, None] - lp["x"]  # (S, I) flow excluding own order
+        y_cf = rest[:, :, None] + grid[:, None, :]  # (S, I, A)
+        p_cf = lp["m_v"][:, None, None] + lp["lam"][:, None, None] * (y_cf - lp["m_y"][:, None, None])
+        if self.cfg.tick > 0:
+            p_cf = np.round(p_cf / self.cfg.tick) * self.cfg.tick
+        return (lp["v"][:, None, None] - p_cf) * grid[:, None, :]
+
     def orders(self, v_idx: np.ndarray, actions: np.ndarray) -> np.ndarray:
         """Order sizes (S, I) for action indices (S, I) given value indices (S,)."""
         return self.grid_v[v_idx[:, None], actions]
@@ -277,6 +291,11 @@ class KyleMarket:
         self.u_shock = np.zeros(self.S)
         y = x.sum(axis=1) + self.passive_beta * v + u
 
+        # Pricing inputs as used this period (kept for counterfactual learners).
+        self.last_pricing = {
+            "v": v, "y": y, "x": x, "lam": self.lam.copy(),
+            "m_v": self.m_v.copy(), "m_y": self.m_y.copy(),
+        }
         p = self.m_v + self.lam * (y - self.m_y)
         if cfg.tick > 0:
             p = np.round(p / cfg.tick) * cfg.tick

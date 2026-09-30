@@ -153,3 +153,38 @@ def test_checkpoint_resume_is_exact(tmp_path):
     env, agent = fresh()  # a new process would start from scratch objects
     env, agent, _, _ = train(env, agent, 3000, checkpoint=ck, checkpoint_every=1000)
     assert np.array_equal(agent.Q, straight)
+
+
+def test_counterfactual_profits_match_realised_profit_for_taken_order():
+    env = KyleMarket(MarketConfig(memory="residual", tick=0.05), 16, seed=3)
+    env.reset()
+    for _ in range(50):
+        a = env.rng.integers(env.n_actions, size=(16, 2))
+        r, _, _ = env.step(a)
+        cf = env.counterfactual_profits()
+        taken = np.take_along_axis(cf, a[..., None], axis=-1)[..., 0]
+        assert np.allclose(taken, r)
+
+
+def test_counterfactual_update_rejects_own_order_dependent_state():
+    env = KyleMarket(MarketConfig(memory="flow"), 2)
+    with pytest.raises(ValueError):
+        TabularQ(env, update="counterfactual")
+
+
+def test_counterfactual_learner_finds_best_response_under_noise():
+    """With full-information updates the noisy-payoff pruning bias should vanish:
+    a lone trader facing a fixed price rule learns v / (2 lambda) despite noise."""
+    cfg = MarketConfig(n_informed=1, memory="none", mm_fixed=True, n_actions=41)
+    env = KyleMarket(cfg, 16, seed=0)
+    agent = TabularQ(env, alpha=0.05, gamma=0.0, beta_decay=1e-4, update="counterfactual", seed=1)
+    obs = env.reset()
+    for t in range(20_000):
+        a = agent.act(obs, t)
+        r, obs2, _ = env.step(a)
+        agent.observe(obs, a, r, obs2, t)
+        obs = obs2
+    greedy = env.grid[agent.greedy_policy()[:, 0, 0]]
+    target = env.values / (2 * env.bench.lam_nash)
+    step = env.grid[1] - env.grid[0]
+    assert (np.abs(np.median(greedy, axis=0) - target) <= 1.0 * step + 1e-9).all()
