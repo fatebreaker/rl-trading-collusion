@@ -1,0 +1,11 @@
+{
+  "name": "exp5_controls",
+  "base": ["--algo", "q", "--sessions", "200", "--steps", "6000000", "--eval-steps", "20000",
+           "--impulse-reps", "40", "--log-every", "1000000", "--checkpoint-every", "1000000",
+           "--agent-kwargs", "{\"beta_decay\": 1e-6}"],
+  "grid": {
+    "--gamma": [0.95, 0.0],
+    "--memory": ["residual", "none"],
+    "--seed": [0, 1, 2]
+  }
+}

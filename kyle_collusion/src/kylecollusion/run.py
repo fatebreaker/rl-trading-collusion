@@ -18,8 +18,8 @@ from dataclasses import asdict
 
 import numpy as np
 
-from .diagnostics import convergence_stats, impulse_response
-from .market import MEMORY_MODES, KyleMarket, MarketConfig
+from .diagnostics import convergence_stats, impulse_response, noise_shock_response
+from .market import GRID_MODES, MEMORY_MODES, KyleMarket, MarketConfig
 from .metrics import session_metrics, summarize
 
 ALGOS = ("q", "dqn", "ppo")
@@ -133,6 +133,10 @@ def run(args) -> dict:
         tick=args.tick,
         disclosure_noise=args.disclosure_noise,
         memory=args.memory,
+        grid_mode=args.grid_mode,
+        xi=args.xi,
+        theta=args.theta,
+        n_price_bins=args.n_price_bins,
         n_flow_bins=args.n_flow_bins,
         mm_halflife=args.mm_halflife,
         mm_fixed=args.mm_fixed,
@@ -153,7 +157,7 @@ def run(args) -> dict:
     log, obs, onpath = evaluate(env, agent, obs, args.eval_steps)
     per_session = session_metrics(log, env.bench)
     if snap is not None:
-        per_session.update(convergence_stats(snap, agent.greedy_policy(), onpath, env.grid))
+        per_session.update(convergence_stats(snap, agent.greedy_policy(), onpath))
     summary = summarize(per_session)
 
     impulse = None
@@ -162,6 +166,9 @@ def run(args) -> dict:
             env, agent, obs, horizon=args.impulse_horizon, reps=args.impulse_reps,
             gamma=getattr(agent, "gamma", 0.95),
         )
+    shocks = []
+    for sd in [float(x) for x in args.shock_sds.split(",") if x.strip()]:
+        shocks.append(noise_shock_response(env, agent, obs, sd, reps=args.impulse_reps or 20))
 
     result = {
         "algo": args.algo,
@@ -180,6 +187,8 @@ def run(args) -> dict:
         result["final_epsilon"] = agent.epsilon(args.steps)
     if impulse is not None:
         result["impulse"] = impulse
+    if shocks:
+        result["noise_shocks"] = shocks
     return result
 
 
@@ -200,6 +209,10 @@ def parse_args(argv=None):
     ap.add_argument("--tick", type=float, default=0.0)
     ap.add_argument("--disclosure-noise", type=float, default=0.0)
     ap.add_argument("--memory", choices=MEMORY_MODES, default="residual")
+    ap.add_argument("--grid-mode", choices=GRID_MODES, default="wide")
+    ap.add_argument("--xi", type=float, default=0.0)
+    ap.add_argument("--theta", type=float, default=0.1)
+    ap.add_argument("--n-price-bins", type=int, default=15)
     ap.add_argument("--n-flow-bins", type=int, default=7)
     ap.add_argument("--mm-halflife", type=float, default=2000.0)
     ap.add_argument("--mm-fixed", action="store_true")
@@ -211,6 +224,9 @@ def parse_args(argv=None):
     ap.add_argument("--impulse-reps", type=int, default=0,
                     help="deviation events per session for the punishment test (0 = skip)")
     ap.add_argument("--impulse-horizon", type=int, default=15)
+    ap.add_argument("--shock-sds", type=str, default="",
+                    help="comma-separated noise shocks in units of sigma_u for the "
+                         "Dou et al. noise-shock test, e.g. '0.5,2'")
     ap.add_argument("--checkpoint", type=str, default="",
                     help="pickle file for periodic training state; resumes from it if present")
     ap.add_argument("--checkpoint-every", type=int, default=500_000)
@@ -254,6 +270,11 @@ def main(argv=None):
                   f"   {imp['d_profit_dev'][k]:>+7.4f} ± {imp['d_profit_dev_ci95'][k]:.4f}")
         print(f"deviator gain: period 0 {imp['gain_dev_period0']:+.4f}, discounted over "
               f"{imp['horizon'] + 1} periods {imp['cum_gain_dev']:+.4f} ± {imp['cum_gain_dev_ci95']:.4f}")
+    for sh in res.get("noise_shocks", []):
+        print(f"\nnoise shock {sh['shock_sd']} sigma_u: lag   d_beta per trader      d_price(signed)")
+        for k in range(min(4, sh["horizon"] + 1)):
+            print(f"                          {k:>3}   {sh['d_beta_all'][k]:>+8.4f} ± {sh['d_beta_all_ci95'][k]:.4f}"
+                  f"   {sh['d_price'][k]:>+9.5f} ± {sh['d_price_ci95'][k]:.5f}")
     if args.out:
         os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
         with open(args.out, "w") as fh:

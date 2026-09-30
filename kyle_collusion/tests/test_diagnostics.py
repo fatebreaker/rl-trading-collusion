@@ -68,14 +68,64 @@ def test_paired_copies_share_randomness():
 
 
 def test_convergence_stats():
-    grid = np.linspace(-1, 1, 5)  # step 0.5
     snap = np.zeros((2, 1, 2, 1), dtype=int)
     now = snap.copy()
     now[0, 0, 0, 0] = 2  # session 0 moves one on-path entry by two steps
     now[1, 0, 1, 0] = 1  # session 1 moves one off-path entry
     onpath = np.zeros_like(snap, dtype=bool)
     onpath[:, 0, 0, 0] = True
-    st = convergence_stats(snap, now, onpath, grid)
+    st = convergence_stats(snap, now, onpath)
     assert st["policy_change"].tolist() == [0.5, 0.5]
     assert st["policy_change_onpath"].tolist() == [1.0, 0.0]
     assert st["order_shift_onpath"].tolist() == pytest.approx([2.0, 0.0])
+
+
+class PriceTrigger:
+    """Trades at the collusive level unless last period's price surprise was
+    large and in the direction of the value, then trades at Nash."""
+
+    def __init__(self, env, threshold):
+        self.env, self.th = env, threshold
+
+    def act(self, obs, t, greedy=False):
+        env = self.env
+        surprise = obs["feat"][..., 2]  # price surprise in noise-price sd units
+        prev_sign = np.sign(obs["feat"][..., 1])
+        punish = surprise * prev_sign > self.th
+        v = env.values[obs["v_idx"]][:, None]
+        beta = np.where(punish, env.bench.beta_nash, env.bench.beta_coll)
+        x = beta * v
+        return np.abs(env.grid_v[obs["v_idx"]][:, None, :] - x[..., None]).argmin(-1)
+
+
+def _shock_run(agent_cls, **kw):
+    from kylecollusion.diagnostics import noise_shock_response
+
+    env = KyleMarket(MarketConfig(memory="price", n_actions=61), 200, seed=2)
+    agent = agent_cls(env, **kw)
+    obs = env.reset()
+    for _ in range(3000):
+        _, obs, _ = env.step(agent.act(obs, 0))
+    return noise_shock_response(env, agent, obs, shock_sd=3.0, horizon=3, reps=10)
+
+
+class Memoryless:
+    def __init__(self, env, beta):
+        self.env, self.beta = env, beta
+
+    def act(self, obs, t, greedy=False):
+        env = self.env
+        x = self.beta * env.values[obs["v_idx"]][:, None] * np.ones((1, env.I))
+        return np.abs(env.grid_v[obs["v_idx"]][:, None, :] - x[..., None]).argmin(-1)
+
+
+def test_noise_shock_ignored_by_memoryless_traders():
+    sh = _shock_run(Memoryless, beta=0.5)
+    assert np.allclose(sh["d_beta_all"][1:], 0.0)
+    assert sh["d_price"][0] > 0  # the shock itself moves the price
+
+
+def test_noise_shock_triggers_price_trigger_traders():
+    sh = _shock_run(PriceTrigger, threshold=1.5)
+    assert sh["d_beta_all"][0] == pytest.approx(0.0, abs=1e-12)
+    assert sh["d_beta_all"][1] - sh["d_beta_all_ci95"][1] > 0

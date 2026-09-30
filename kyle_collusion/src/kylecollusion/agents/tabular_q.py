@@ -48,7 +48,7 @@ class TabularQ:
         self.rng = np.random.default_rng(seed)
 
         S, I = env.S, env.I
-        x = env.grid[None, :]
+        x = env.grid_v  # (n_values, n_actions): order sizes per value
         v = env.values[:, None]
         lam0 = env.bench.lam_nash
         # E[(v - lam*(x + others + passive*v + u)) x] with others zero-mean.

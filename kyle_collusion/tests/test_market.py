@@ -96,3 +96,42 @@ def test_orders_memory_sees_rival_order_exactly():
         # state = v_prev * n_actions + rival's order index, for each trader
         assert (obs["s"][:, 0] == prev_v * env.n_actions + a[:, 1]).all()
         assert (obs["s"][:, 1] == prev_v * env.n_actions + a[:, 0]).all()
+
+
+def test_bracket_grid_spans_collusive_to_nash():
+    cfg = MarketConfig(grid_mode="bracket", n_values=10, n_actions=15, sigma_u=0.1)
+    env = KyleMarket(cfg, 4, seed=0)
+    b = env.bench
+    for k, v in enumerate(env.values):
+        xn, xm = b.beta_nash * v, b.beta_coll * v
+        lo, hi = sorted([xm - 0.1 * (xn - xm), xn + 0.1 * (xn - xm)])
+        assert env.grid_v[k, 0] == pytest.approx(lo)
+        assert env.grid_v[k, -1] == pytest.approx(hi)
+
+
+def test_price_memory_and_xi_market():
+    cfg = MarketConfig(memory="price", grid_mode="bracket", n_values=10, n_actions=15,
+                       sigma_u=0.1, xi=500.0)
+    env = KyleMarket(cfg, 32, seed=1)
+    obs = env.reset()
+    for _ in range(3000):
+        _, obs, info = env.step(np.full((32, 2), 7))  # middle of the bracket
+        assert obs["s"].min() >= 0 and obs["s"].max() < env.n_states
+    # With xi = 500 the market maker's impact collapses to about 1/xi.
+    assert info["lam"].mean() == pytest.approx(2e-3, rel=0.05)
+
+
+def test_old_checkpoints_still_load():
+    import pickle
+
+    env = KyleMarket(MarketConfig(memory="orders"), 4, seed=0)
+    env.reset()
+    state = dict(env.__dict__)
+    for k in ("grid_v", "u_shock", "prev_rival_idx", "prev_price"):
+        state.pop(k)
+    blob = pickle.dumps(env)
+    old = pickle.loads(blob)
+    old.__dict__.clear()
+    old.__setstate__(state)
+    _, obs, _ = old.step(np.zeros((4, 2), dtype=int))
+    assert obs["s"].shape == (4, 2)

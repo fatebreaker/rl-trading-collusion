@@ -19,7 +19,7 @@ from .market import KyleMarket
 
 
 def convergence_stats(
-    snap: np.ndarray, now: np.ndarray, onpath: np.ndarray | None, grid: np.ndarray
+    snap: np.ndarray, now: np.ndarray, onpath: np.ndarray | None
 ) -> dict[str, np.ndarray]:
     """Compare greedy tables (S, I, n_states, n_values) taken `window` steps apart.
 
@@ -31,8 +31,7 @@ def convergence_stats(
     changed = now != snap
     out = {"policy_change": changed.reshape(S, -1).mean(1)}
     if onpath is not None:
-        step = abs(grid[1] - grid[0]) if len(grid) > 1 else 1.0
-        shift = np.abs(grid[now] - grid[snap]) / step
+        shift = np.abs(now.astype(np.int64) - snap.astype(np.int64))
         m = onpath.reshape(S, -1)
         cnt = np.maximum(m.sum(1), 1)
         out["policy_change_onpath"] = (changed.reshape(S, -1) * m).sum(1) / cnt
@@ -43,10 +42,10 @@ def convergence_stats(
 def _best_response_idx(env: KyleMarket, others_x: np.ndarray) -> np.ndarray:
     """Myopic best order given the market maker's current rule and rivals' orders."""
     v = env.values[env.v_idx]
-    lam = np.maximum(env.lam, 1e-6)
+    lam = np.maximum(env.lam, 1e-12)
     expected_rest = others_x + env.passive_beta * v - env.m_y
     x_star = (v - env.m_v - lam * expected_rest) / (2.0 * lam)
-    return np.abs(env.grid[None, :] - x_star[:, None]).argmin(1)
+    return env.nearest_action(env.v_idx, x_star)
 
 
 def impulse_response(
@@ -96,7 +95,7 @@ def impulse_response(
             a_b = agent.act(o_base, 0, greedy=True)
             a_d = agent.act(o_dev, 0, greedy=True)
             if k == 0:
-                others = e_dev.grid[a_d[:, rivals]].sum(1)
+                others = e_dev.orders(e_dev.v_idx, a_d)[:, rivals].sum(1)
                 a_d = a_d.copy()
                 a_d[:, deviator] = _best_response_idx(e_dev, others)
                 deviated[r] = a_d[:, deviator] != a_b[:, deviator]
@@ -138,3 +137,67 @@ def impulse_response(
     )
     out["gain_dev_period0"] = float(dpi_dev[:, 0][mask].mean()) if n else float("nan")
     return out
+
+
+def noise_shock_response(
+    env: KyleMarket,
+    agent,
+    obs: dict,
+    shock_sd: float,
+    horizon: int = 8,
+    reps: int = 40,
+    gap: int = 50,
+) -> dict:
+    """Dou et al. (2025, Sec. 5.3) noise-shock impulse response, paired.
+
+    In one copy of each market the noise-trader order gets an extra
+    shock_sd * sigma_u * sign(v) at lag 0, pushing the price the way a rival's
+    over-trading would. Nobody deviated, so under price-trigger strategies the
+    traders mistake it for a deviation and trade harder at lag 1; under
+    over-pruning they ignore it.
+
+    Reported per lag, pooled over events:
+      d_beta_all[k]   change in per-trader trading intensity, E[v dx]/Var(v)/I
+      d_price[k]      change in the sign-adjusted price sign(v) * dp
+    """
+    K = horizon + 1
+    var_v = float(np.mean(env.values**2))
+    vdx = np.zeros((reps, K, env.S))
+    dp = np.zeros((reps, K, env.S))
+    for r in range(reps):
+        for _ in range(gap):
+            _, obs, _ = env.step(agent.act(obs, 0, greedy=True))
+        e_s = copy.deepcopy(env)
+        o_s = {k: v.copy() for k, v in obs.items()}
+        o_b = obs
+        v0 = env.values[env.v_idx]
+        e_s.u_shock = shock_sd * env.cfg.sigma_u * np.sign(v0)
+        for k in range(K):
+            a_b = agent.act(o_b, 0, greedy=True)
+            a_s = agent.act(o_s, 0, greedy=True)
+            _, o_b, i_b = env.step(a_b)
+            _, o_s, i_s = e_s.step(a_s)
+            v = i_b["v"]
+            vdx[r, k] = v * (i_s["x"] - i_b["x"]).mean(1)
+            dp[r, k] = np.sign(v) * (i_s["p"] - i_b["p"])
+        obs = o_b
+
+    n = reps * env.S
+
+    def prof(a, scale):
+        flat = a.transpose(1, 0, 2).reshape(K, -1)
+        m = flat.mean(1) * scale
+        ci = 1.96 * flat.std(1, ddof=1) / math.sqrt(n) * scale
+        return m.tolist(), ci.tolist()
+
+    b_m, b_ci = prof(vdx, 1.0 / var_v)
+    p_m, p_ci = prof(dp, 1.0)
+    return {
+        "shock_sd": shock_sd,
+        "n_events": n,
+        "horizon": horizon,
+        "d_beta_all": b_m,
+        "d_beta_all_ci95": b_ci,
+        "d_price": p_m,
+        "d_price_ci95": p_ci,
+    }

@@ -81,3 +81,23 @@ def test_passive_degenerate_when_learners_exceed_passive_by_one(P):
     assert b.profit_coll == pytest.approx(b.profit_nash)
     assert math.isnan(collusion_index(0.5, b.agg_nash, b.agg_coll))
     assert np.isnan(collusion_index(np.array([0.5, 1.0]), b.agg_nash, b.agg_coll)).all()
+
+
+def test_xi_benchmarks_match_dou_et_al():
+    """Dou, Goldstein & Ji (2025) regime: sigma_u = 0.1, theta = 0.1, xi = 500, I = 2
+    gives chi^N ~ 166.667, chi^M = 125 and lambda^N ~ 2e-3."""
+    b = kyle_benchmarks(2, 1.0, 0.1, xi=500.0, theta=0.1)
+    assert b.beta_nash == pytest.approx(166.667, rel=1e-4)
+    assert b.beta_coll == pytest.approx(125.0, rel=1e-4)
+    assert b.lam_nash == pytest.approx(2e-3, rel=1e-3)
+    assert b.profit_coll > b.profit_nash
+
+
+@pytest.mark.parametrize("I,P", [(2, 0), (3, 0), (3, 1)])
+def test_numeric_solver_matches_closed_form_at_xi_zero(I, P):
+    from kylecollusion.theory import _numeric_benchmarks
+
+    a = kyle_benchmarks(I, 1.0, 0.7, P)
+    c = _numeric_benchmarks(I, P, 1.0, 0.7, 1e-12, 0.1)
+    for f in ("beta_nash", "agg_coll", "lam_nash", "profit_nash", "profit_coll"):
+        assert getattr(c, f) == pytest.approx(getattr(a, f), rel=1e-6), f

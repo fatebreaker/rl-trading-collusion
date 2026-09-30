@@ -22,6 +22,18 @@ Two reference points are used to score learned behaviour:
 Optional "passive" traders play the Nash strategy of the full game and never
 learn. They model non-algorithmic informed traders and are one of the market
 design interventions.
+
+Information-insensitive investors (Dou, Goldstein & Ji 2025): a mass xi of
+investors with demand z = -xi (p - v_bar) trades against the price without
+learning from it. The market maker then trades off pricing error against
+inventory, p = argmin theta (p - E[v|y])^2 + (y + z)^2, which gives the linear
+rule p = v_bar + lambda y with
+
+    lambda = (theta * lambda_B + xi) / (theta + xi^2),
+
+where lambda_B = Cov(v, y) / Var(y) is the Bayesian price impact. xi = 0 is the
+standard Kyle market (lambda = lambda_B) and keeps the closed forms below; for
+xi > 0 the Nash and collusive intensities are solved numerically.
 """
 
 from __future__ import annotations
@@ -55,9 +67,14 @@ class Benchmarks:
         return asdict(self)
 
 
-def market_lambda(total_beta: float, sigma_v: float, sigma_u: float) -> float:
-    """Rational linear pricing given aggregate informed intensity."""
-    return total_beta * sigma_v**2 / (total_beta**2 * sigma_v**2 + sigma_u**2)
+def market_lambda(
+    total_beta: float, sigma_v: float, sigma_u: float, xi: float = 0.0, theta: float = 0.1
+) -> float:
+    """Rational linear price impact given aggregate informed intensity."""
+    lam_b = total_beta * sigma_v**2 / (total_beta**2 * sigma_v**2 + sigma_u**2)
+    if xi == 0.0:
+        return lam_b
+    return (theta * lam_b + xi) / (theta + xi**2)
 
 
 def informativeness(total_beta: float, sigma_v: float, sigma_u: float) -> float:
@@ -70,12 +87,58 @@ def learner_profit(beta_i: float, total_beta: float, lam: float, sigma_v: float)
     return beta_i * sigma_v**2 * (1.0 - lam * total_beta)
 
 
+def _nash_beta(n: int, sigma_v: float, sigma_u: float, xi: float, theta: float) -> float:
+    """Symmetric Nash beta solving beta = 1 / ((n+1) lambda(n beta)).
+
+    h(beta) = (n+1) beta lambda(n beta) - 1 is strictly increasing, so the root
+    is unique and bisection is safe."""
+    def h(b):
+        return (n + 1) * b * market_lambda(n * b, sigma_v, sigma_u, xi, theta) - 1.0
+
+    lo, hi = 0.0, 1.0
+    while h(hi) < 0:
+        hi *= 2.0
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if h(mid) < 0 else (lo, mid)
+    return 0.5 * (lo + hi)
+
+
+def _collusive_agg(
+    passive_total: float, agg_nash: float, sigma_v: float, sigma_u: float, xi: float, theta: float
+) -> float:
+    """Learners' joint profit-maximising aggregate intensity (numerical)."""
+    def joint(bl):
+        tot = bl + passive_total
+        return learner_profit(bl, tot, market_lambda(tot, sigma_v, sigma_u, xi, theta), sigma_v)
+
+    top = 4.0 * max(agg_nash, 1e-12)
+    grid = [top * k / 4000 for k in range(4001)]
+    k = max(range(len(grid)), key=lambda i: joint(grid[i]))
+    lo, hi = grid[max(k - 1, 0)], grid[min(k + 1, len(grid) - 1)]
+    g = (math.sqrt(5) - 1) / 2
+    for _ in range(200):  # golden-section refinement inside the best bracket
+        a, b = hi - g * (hi - lo), lo + g * (hi - lo)
+        if joint(a) > joint(b):
+            hi = b
+        else:
+            lo = a
+    return 0.5 * (lo + hi)
+
+
 def kyle_benchmarks(
-    n_informed: int, sigma_v: float, sigma_u: float, n_passive: int = 0
+    n_informed: int,
+    sigma_v: float,
+    sigma_u: float,
+    n_passive: int = 0,
+    xi: float = 0.0,
+    theta: float = 0.1,
 ) -> Benchmarks:
     if n_informed < 1:
         raise ValueError("need at least one learning informed trader")
     n = n_informed + n_passive
+    if xi > 0.0:
+        return _numeric_benchmarks(n_informed, n_passive, sigma_v, sigma_u, xi, theta)
 
     # Symmetric Nash of the n-trader game (Kyle with n informed insiders).
     beta_n = sigma_u / (math.sqrt(n) * sigma_v)
@@ -102,6 +165,33 @@ def kyle_benchmarks(
         lam_coll=lam_c,
         profit_nash=learner_profit(beta_n, total_nash, lam_n, sigma_v),
         profit_coll=learner_profit(agg_coll / n_informed, total_coll, lam_c, sigma_v),
+        info_nash=informativeness(total_nash, sigma_v, sigma_u),
+        info_coll=informativeness(total_coll, sigma_v, sigma_u),
+    )
+
+
+def _numeric_benchmarks(I, P, sigma_v, sigma_u, xi, theta) -> Benchmarks:
+    n = I + P
+    beta_n = _nash_beta(n, sigma_v, sigma_u, xi, theta)
+    passive_total = P * beta_n
+    total_nash = n * beta_n
+    lam_n = market_lambda(total_nash, sigma_v, sigma_u, xi, theta)
+    agg_coll = _collusive_agg(passive_total, I * beta_n, sigma_v, sigma_u, xi, theta)
+    total_coll = agg_coll + passive_total
+    lam_c = market_lambda(total_coll, sigma_v, sigma_u, xi, theta)
+    return Benchmarks(
+        n_informed=I,
+        n_passive=P,
+        sigma_v=sigma_v,
+        sigma_u=sigma_u,
+        beta_nash=beta_n,
+        beta_coll=agg_coll / I,
+        agg_nash=I * beta_n,
+        agg_coll=agg_coll,
+        lam_nash=lam_n,
+        lam_coll=lam_c,
+        profit_nash=learner_profit(beta_n, total_nash, lam_n, sigma_v),
+        profit_coll=learner_profit(agg_coll / I, total_coll, lam_c, sigma_v),
         info_nash=informativeness(total_nash, sigma_v, sigma_u),
         info_coll=informativeness(total_coll, sigma_v, sigma_u),
     )

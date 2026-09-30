@@ -1,0 +1,15 @@
+{
+  "name": "exp6_alpha",
+  "base": ["--algo", "q", "--sessions", "200", "--steps", "6000000", "--eval-steps", "20000",
+           "--impulse-reps", "20", "--log-every", "1000000", "--checkpoint-every", "1000000"],
+  "grid": {
+    "--memory": ["residual", "none"],
+    "--agent-kwargs": ["{\"beta_decay\": 1e-6, \"alpha\": 0.05}", "{\"beta_decay\": 1e-6, \"alpha\": 0.3}"]
+  },
+  "labels": {
+    "--agent-kwargs": {
+      "{\"beta_decay\": 1e-6, \"alpha\": 0.05}": "a005",
+      "{\"beta_decay\": 1e-6, \"alpha\": 0.3}": "a030"
+    }
+  }
+}
