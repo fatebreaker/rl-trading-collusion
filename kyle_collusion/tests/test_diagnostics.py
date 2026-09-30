@@ -106,7 +106,7 @@ def _shock_run(agent_cls, **kw):
     obs = env.reset()
     for _ in range(3000):
         _, obs, _ = env.step(agent.act(obs, 0))
-    return noise_shock_response(env, agent, obs, shock_sd=3.0, horizon=3, reps=10)
+    return noise_shock_response(env, agent, obs, shock_size=3.0 * env.cfg.sigma_u, horizon=3, reps=10)
 
 
 class Memoryless:

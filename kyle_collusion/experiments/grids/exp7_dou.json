@@ -1,13 +1,45 @@
 {
-  "name": "exp7_dou",
-  "base": ["--algo", "q", "--sessions", "100", "--steps", "15000000", "--eval-steps", "20000",
-           "--sigma-u", "0.1", "--n-values", "10", "--n-actions", "15", "--grid-mode", "bracket",
-           "--impulse-reps", "20", "--shock-sds", "0.5,2",
-           "--log-every", "1000000", "--checkpoint-every", "1000000",
-           "--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05}"],
-  "grid": {
-    "--xi": [0, 500],
-    "--gamma": [0.95, 0.0],
-    "--memory": ["price", "none"]
-  }
+ "name": "exp7_dou",
+ "base": [
+  "--algo",
+  "q",
+  "--sessions",
+  "100",
+  "--steps",
+  "15000000",
+  "--eval-steps",
+  "20000",
+  "--sigma-u",
+  "0.1",
+  "--n-values",
+  "10",
+  "--n-actions",
+  "15",
+  "--grid-mode",
+  "bracket",
+  "--impulse-reps",
+  "20",
+  "--shock-devs",
+  "0.25,1",
+  "--log-every",
+  "1000000",
+  "--checkpoint-every",
+  "1000000",
+  "--agent-kwargs",
+  "{\"beta_decay\": 4e-7, \"alpha\": 0.05}"
+ ],
+ "grid": {
+  "--xi": [
+   0,
+   500
+  ],
+  "--gamma": [
+   0.95,
+   0.0
+  ],
+  "--memory": [
+   "price",
+   "none"
+  ]
+ }
 }

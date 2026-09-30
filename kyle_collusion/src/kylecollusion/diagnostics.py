@@ -143,7 +143,7 @@ def noise_shock_response(
     env: KyleMarket,
     agent,
     obs: dict,
-    shock_sd: float,
+    shock_size: float,
     horizon: int = 8,
     reps: int = 40,
     gap: int = 50,
@@ -151,7 +151,7 @@ def noise_shock_response(
     """Dou et al. (2025, Sec. 5.3) noise-shock impulse response, paired.
 
     In one copy of each market the noise-trader order gets an extra
-    shock_sd * sigma_u * sign(v) at lag 0, pushing the price the way a rival's
+    shock_size * sign(v) at lag 0, pushing the price the way a rival's
     over-trading would. Nobody deviated, so under price-trigger strategies the
     traders mistake it for a deviation and trade harder at lag 1; under
     over-pruning they ignore it.
@@ -171,7 +171,7 @@ def noise_shock_response(
         o_s = {k: v.copy() for k, v in obs.items()}
         o_b = obs
         v0 = env.values[env.v_idx]
-        e_s.u_shock = shock_sd * env.cfg.sigma_u * np.sign(v0)
+        e_s.u_shock = shock_size * np.sign(v0)
         for k in range(K):
             a_b = agent.act(o_b, 0, greedy=True)
             a_s = agent.act(o_s, 0, greedy=True)
@@ -193,7 +193,7 @@ def noise_shock_response(
     b_m, b_ci = prof(vdx, 1.0 / var_v)
     p_m, p_ci = prof(dp, 1.0)
     return {
-        "shock_sd": shock_sd,
+        "shock_size": shock_size,
         "n_events": n,
         "horizon": horizon,
         "d_beta_all": b_m,

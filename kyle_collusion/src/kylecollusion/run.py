@@ -19,6 +19,7 @@ from dataclasses import asdict
 import numpy as np
 
 from .diagnostics import convergence_stats, impulse_response, noise_shock_response
+from .theory import deviation_gap
 from .market import GRID_MODES, MEMORY_MODES, KyleMarket, MarketConfig
 from .metrics import session_metrics, summarize
 
@@ -167,8 +168,12 @@ def run(args) -> dict:
             gamma=getattr(agent, "gamma", 0.95),
         )
     shocks = []
-    for sd in [float(x) for x in args.shock_sds.split(",") if x.strip()]:
-        shocks.append(noise_shock_response(env, agent, obs, sd, reps=args.impulse_reps or 20))
+    dev_unit = abs(deviation_gap(env.bench)) * float(np.mean(np.abs(env.values)))
+    for f in [float(x) for x in args.shock_devs.split(",") if x.strip()]:
+        sh = noise_shock_response(env, agent, obs, f * dev_unit, reps=args.impulse_reps or 20)
+        sh["shock_devs"] = f
+        sh["shock_over_sigma_u"] = f * dev_unit / env.cfg.sigma_u
+        shocks.append(sh)
 
     result = {
         "algo": args.algo,
@@ -224,9 +229,10 @@ def parse_args(argv=None):
     ap.add_argument("--impulse-reps", type=int, default=0,
                     help="deviation events per session for the punishment test (0 = skip)")
     ap.add_argument("--impulse-horizon", type=int, default=15)
-    ap.add_argument("--shock-sds", type=str, default="",
-                    help="comma-separated noise shocks in units of sigma_u for the "
-                         "Dou et al. noise-shock test, e.g. '0.5,2'")
+    ap.add_argument("--shock-devs", type=str, default="",
+                    help="comma-separated noise shocks for the Dou et al. noise-shock test, "
+                         "in units of a typical one-period best-response deviation "
+                         "(1.0 moves flow as much as a deviation at |v| = E|v|), e.g. '0.25,1'")
     ap.add_argument("--checkpoint", type=str, default="",
                     help="pickle file for periodic training state; resumes from it if present")
     ap.add_argument("--checkpoint-every", type=int, default=500_000)
@@ -271,7 +277,8 @@ def main(argv=None):
         print(f"deviator gain: period 0 {imp['gain_dev_period0']:+.4f}, discounted over "
               f"{imp['horizon'] + 1} periods {imp['cum_gain_dev']:+.4f} ± {imp['cum_gain_dev_ci95']:.4f}")
     for sh in res.get("noise_shocks", []):
-        print(f"\nnoise shock {sh['shock_sd']} sigma_u: lag   d_beta per trader      d_price(signed)")
+        print(f"\nnoise shock {sh['shock_devs']} deviations = {sh['shock_over_sigma_u']:.2f} sigma_u:"
+              f"  lag   d_beta per trader      d_price(signed)")
         for k in range(min(4, sh["horizon"] + 1)):
             print(f"                          {k:>3}   {sh['d_beta_all'][k]:>+8.4f} ± {sh['d_beta_all_ci95'][k]:.4f}"
                   f"   {sh['d_price'][k]:>+9.5f} ± {sh['d_price_ci95'][k]:.5f}")

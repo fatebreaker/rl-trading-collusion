@@ -101,3 +101,14 @@ def test_numeric_solver_matches_closed_form_at_xi_zero(I, P):
     c = _numeric_benchmarks(I, P, 1.0, 0.7, 1e-12, 0.1)
     for f in ("beta_nash", "agg_coll", "lam_nash", "profit_nash", "profit_coll"):
         assert getattr(c, f) == pytest.approx(getattr(a, f), rel=1e-6), f
+
+
+def test_deviation_signal_to_noise_by_regime():
+    """At xi = 0 the deviation's signal-to-noise ratio does not depend on sigma_u;
+    at xi = 500 deviations are hundreds of noise standard deviations large."""
+    from kylecollusion.theory import deviation_gap
+
+    snr = [deviation_gap(kyle_benchmarks(2, 1.0, su)) / su for su in (0.1, 1.0, 5.0)]
+    assert snr[0] == pytest.approx(0.25) and snr[1] == pytest.approx(0.25) and snr[2] == pytest.approx(0.25)
+    b = kyle_benchmarks(2, 1.0, 0.1, xi=500.0, theta=0.1)
+    assert deviation_gap(b, 500.0, 0.1) / 0.1 > 500

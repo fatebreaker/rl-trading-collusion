@@ -208,3 +208,16 @@ def collusion_index(value: float, nash: float, coll: float) -> float:
         # passive Nash traders), so the index is undefined.
         return value * float("nan")
     return (value - nash) / (coll - nash)
+
+
+def deviation_gap(b: Benchmarks, xi: float = 0.0, theta: float = 0.1) -> float:
+    """Intensity change of a one-period best-response deviation from collusion.
+
+    With rivals at beta_coll and the market maker pricing at lam_coll, the
+    myopic best response is beta_d = (1 - lam_coll * (others)) / (2 lam_coll).
+    Returns beta_d - beta_coll (per trader). Multiplied by sigma_v / sigma_u it
+    is the deviation's signal-to-noise ratio per unit of v / sigma_v.
+    """
+    others = (b.n_informed - 1) * b.beta_coll + b.n_passive * b.beta_nash
+    beta_d = (1.0 - b.lam_coll * others) / (2.0 * b.lam_coll)
+    return beta_d - b.beta_coll
