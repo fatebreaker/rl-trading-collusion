@@ -159,6 +159,8 @@ def run(args) -> dict:
     log, obs, onpath = evaluate(env, agent, obs, args.eval_steps)
     per_session = session_metrics(log, env.bench)
     if snap is not None:
+        if onpath is not None and onpath.shape[1] != snap.shape[1]:  # shared table
+            onpath = onpath.any(axis=1, keepdims=True)
         per_session.update(convergence_stats(snap, agent.greedy_policy(), onpath))
     summary = summarize(per_session)
 

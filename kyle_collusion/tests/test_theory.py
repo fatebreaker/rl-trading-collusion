@@ -112,3 +112,9 @@ def test_deviation_signal_to_noise_by_regime():
     assert snr[0] == pytest.approx(0.25) and snr[1] == pytest.approx(0.25) and snr[2] == pytest.approx(0.25)
     b = kyle_benchmarks(2, 1.0, 0.1, xi=500.0, theta=0.1)
     assert deviation_gap(b, 500.0, 0.1) / 0.1 > 500
+
+
+def test_informativeness_index_undefined_when_benchmarks_coincide():
+    b = kyle_benchmarks(2, 1.0, 0.1, xi=500.0, theta=0.1)
+    assert math.isnan(collusion_index(0.99, b.info_nash, b.info_coll))
+    assert not math.isnan(collusion_index(150.0, b.agg_nash, b.agg_coll))

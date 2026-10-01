@@ -203,9 +203,10 @@ def collusion_index(value: float, nash: float, coll: float) -> float:
     Works for any metric that moves monotonically from the Nash to the
     collusive benchmark (profit, aggregate intensity, informativeness).
     """
-    if math.isclose(nash, coll, rel_tol=1e-9, abs_tol=1e-12):
-        # Degenerate market: no gain from collusion (e.g. I = P + 1 with
-        # passive Nash traders), so the index is undefined.
+    if math.isclose(nash, coll, rel_tol=1e-4, abs_tol=1e-12):
+        # Degenerate or ill-conditioned: no gain from collusion (e.g. I = P + 1
+        # with passive Nash traders), or benchmarks practically equal (e.g.
+        # informativeness ~ 1 under both when xi is large). Undefined.
         return value * float("nan")
     return (value - nash) / (coll - nash)
 

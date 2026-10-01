@@ -188,3 +188,20 @@ def test_counterfactual_learner_finds_best_response_under_noise():
     target = env.values / (2 * env.bench.lam_nash)
     step = env.grid[1] - env.grid[0]
     assert (np.abs(np.median(greedy, axis=0) - target) <= 1.0 * step + 1e-9).all()
+
+
+def test_shared_table_is_one_learner():
+    env = KyleMarket(MarketConfig(memory="price", n_values=10, n_actions=15, grid_mode="bracket",
+                                  sigma_u=0.1), 4, seed=0)
+    agent = TabularQ(env, shared=True, seed=1)
+    assert agent.Q.shape[1] == 1
+    obs = env.reset()
+    for t in range(500):
+        a = agent.act(obs, t)
+        r, obs2, _ = env.step(a)
+        agent.observe(obs, a, r, obs2, t)
+        obs = obs2
+    # both traders read the same table, so identical observations give identical greedy orders
+    obs["s"][:, 1] = obs["s"][:, 0]
+    g = agent.act(obs, 10**9, greedy=True)
+    assert np.array_equal(g[:, 0], g[:, 1])

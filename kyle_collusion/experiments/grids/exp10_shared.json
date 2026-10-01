@@ -1,0 +1,13 @@
+{
+  "name": "exp10_shared",
+  "base": ["--algo", "q", "--sessions", "100", "--steps", "15000000", "--eval-steps", "20000",
+           "--sigma-u", "0.1", "--n-values", "10", "--n-actions", "15", "--grid-mode", "bracket",
+           "--memory", "price", "--impulse-reps", "20", "--shock-devs", "0.05,0.25,1",
+           "--log-every", "1000000", "--checkpoint-every", "1000000"],
+  "runs": {
+    "xi500_shared_g095": ["--xi", "500", "--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05, \"shared\": true}"],
+    "xi500_shared_g0": ["--xi", "500", "--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05, \"shared\": true}"],
+    "xi0_shared_g095": ["--xi", "0", "--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05, \"shared\": true}"],
+    "xi0_shared_g0": ["--xi", "0", "--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05, \"shared\": true}"]
+  }
+}

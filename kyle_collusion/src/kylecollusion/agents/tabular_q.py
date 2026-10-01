@@ -18,6 +18,11 @@ the profit it would have earned (Asker, Fershtman & Pakes's synchronous
 learning). In a Kyle market this is exact, because the price is linear in the
 trader's own order; it requires a memory state that does not depend on the
 trader's own order (none or residual), so all orders share one next state.
+
+shared=True gives all traders in a market one common Q-table, updated by each
+trader's experience in turn ("shared matrix, sequential updates" in Esquinas
+Coves's reimplementation of Dou et al. 2025). It is a single learner acting
+for several traders, so its policy can coordinate them without any strategy.
 """
 
 from __future__ import annotations
@@ -41,8 +46,11 @@ class TabularQ:
         alpha_power: float = 0.7,
         alpha_min: float = 0.0,
         update: str = "taken",
+        shared: bool = False,
         seed: int = 0,
     ):
+        if shared and update != "taken":
+            raise ValueError("shared tables support only standard updates")
         if update not in ("taken", "counterfactual"):
             raise ValueError("update must be 'taken' or 'counterfactual'")
         if update == "counterfactual" and env.cfg.memory not in ("none", "residual"):
@@ -58,6 +66,7 @@ class TabularQ:
         self.alpha_power = alpha_power
         self.alpha_min = alpha_min
         self.update = update
+        self.shared = shared
         self.rng = np.random.default_rng(seed)
 
         S, I = env.S, env.I
@@ -67,14 +76,15 @@ class TabularQ:
         # E[(v - lam*(x + others + passive*v + u)) x] with others zero-mean.
         stage = v * x - lam0 * (x * x + env.passive_beta * v * x)
         q0 = stage / (1.0 - gamma)  # (n_values, n_actions)
+        n_tables = 1 if shared else I
         self.Q = np.broadcast_to(
-            q0, (S, I, env.n_states, env.n_values, env.n_actions)
+            q0, (S, n_tables, env.n_states, env.n_values, env.n_actions)
         ).copy()
         self.visits = (
             np.zeros(self.Q.shape, dtype=np.uint32) if alpha_schedule == "visits" else None
         )
         self._si = np.arange(S)[:, None]
-        self._ii = np.arange(I)[None, :]
+        self._ii = np.zeros((1, I), dtype=np.int64) if shared else np.arange(I)[None, :]
 
     def epsilon(self, t: int) -> float:
         return float(np.exp(-self.beta_decay * t))
@@ -97,6 +107,14 @@ class TabularQ:
             target = self.env.counterfactual_profits() + cont[..., None]  # (S, I, A)
             rows = (self._si, self._ii, obs["s"], obs["v_idx"][:, None])
             self.Q[rows] += self.alpha * (target - self.Q[rows])
+            return
+        if self.shared:
+            # Sequential: each trader's update sees the previous trader's.
+            si = np.arange(self.env.S)
+            for i in range(self.env.I):
+                nxt = self.Q[si, 0, obs2["s"][:, i], obs2["v_idx"]].max(axis=-1)
+                idx = (si, 0, obs["s"][:, i], obs["v_idx"], a[:, i])
+                self.Q[idx] += self.alpha * (r[:, i] + self.gamma * nxt - self.Q[idx])
             return
         target = r + self.gamma * self._rows(obs2).max(axis=-1)
         idx = (self._si, self._ii, obs["s"], obs["v_idx"][:, None], a)
