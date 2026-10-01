@@ -48,7 +48,7 @@ Configurable pieces (`MarketConfig`, CLI flags in `run.py`):
 
 ```bash
 pip install -e ".[dev]" matplotlib
-pytest                                       # 68 tests
+pytest                                       # 72 tests
 ./experiments/run_all.sh                     # all sweeps; resumable after interruption
 PYTHONPATH=src python experiments/mechanism.py
 python paper/make_results.py                 # figures + numbers.tex
