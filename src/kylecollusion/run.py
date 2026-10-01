@@ -82,6 +82,8 @@ def train(
     conv_window: int = 0,
     checkpoint: str = "",
     checkpoint_every: int = 0,
+    engine: str = "numpy",
+    seed: int = 0,
 ):
     """Returns (env, agent, final obs, greedy table snapshot taken
     `conv_window` steps before the end or None if the agent has no table).
@@ -101,6 +103,29 @@ def train(
         obs = env.reset()
     t0 = time.time()
     snap_at = steps - conv_window if conv_window and hasattr(agent, "greedy_policy") else -1
+    if engine == "numba":
+        from .fast import fast_train
+
+        # advance in chunks between the points where something must happen
+        marks = {steps}
+        for every in (log_every, checkpoint_every if checkpoint else 0):
+            if every:
+                marks.update(range((start // every + 1) * every, steps, every))
+        if snap_at > start:
+            marks.add(snap_at)
+        t = start
+        for m in sorted(marks):
+            fast_train(env, agent, t, m, seed=seed)
+            t = m
+            if t == snap_at:
+                snap = agent.greedy_policy().copy()
+            if log_every and t % log_every == 0:
+                print(f"  step {t:>9,}  eps={agent.epsilon(t - 1):.4f}  mean lam={env.lam.mean():.4f}  "
+                      f"({time.time() - t0:.0f}s)", flush=True)
+            if checkpoint and checkpoint_every and t < steps and t % checkpoint_every == 0:
+                _save_checkpoint(checkpoint, {"env": env, "agent": agent, "obs": env._obs(),
+                                              "t": t, "snap": snap})
+        return env, agent, env._obs(), snap
     for t in range(start, steps):
         if checkpoint and checkpoint_every and t > start and t % checkpoint_every == 0:
             _save_checkpoint(
@@ -154,6 +179,7 @@ def run(args) -> dict:
     env, agent, obs, snap = train(
         env, agent, args.steps, log_every=args.log_every, conv_window=args.conv_window,
         checkpoint=args.checkpoint, checkpoint_every=args.checkpoint_every,
+        engine=args.engine, seed=args.seed,
     )
     train_s = time.time() - t0
 
@@ -187,6 +213,7 @@ def run(args) -> dict:
         "eval_steps": args.eval_steps,
         "sessions": args.sessions,
         "seed": args.seed,
+        "engine": args.engine,
         "train_seconds": round(train_s, 1),
         "benchmarks": env.bench.as_dict(),
         "summary": summary,
@@ -242,6 +269,9 @@ def parse_args(argv=None):
     ap.add_argument("--checkpoint", type=str, default="",
                     help="pickle file for periodic training state; resumes from it if present")
     ap.add_argument("--checkpoint-every", type=int, default=500_000)
+    ap.add_argument("--engine", choices=("numpy", "numba"), default="numpy",
+                    help="numba: compiled per-session training loop for tabular Q "
+                         "(same model, different random draws)")
     ap.add_argument("--out", type=str, default="")
     return ap.parse_args(argv)
 

@@ -71,7 +71,7 @@ def main():
             print(" ".join(cmd))
         return
 
-    env = dict(os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1")
+    env = dict(os.environ, OMP_NUM_THREADS="1", MKL_NUM_THREADS="1", NUMBA_NUM_THREADS="1")
     running: list[subprocess.Popen] = []
     for cmd, log in todo:
         while len(running) >= a.workers:

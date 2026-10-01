@@ -30,6 +30,14 @@ bias ("over-pruning").
   a myopic shared-table learner shows the noise-shock "trigger" signature,
   which comes from never-visited states.
 
+- **Validation:** the same diagnostics find punishment in the Calvano et al.
+  (2020) logit-Bertrand game (`bertrand.py`), and flag its memoryless variant
+  (high prices, no punishment) as a learning artefact. They are also applied
+  to competing Q-learning dealers under adverse selection (`quotes.py`).
+- **Sustainability:** Green-Porter style bounds (`sustain.py`) on how much
+  collusion trigger strategies can sustain given how visible deviations are.
+- **Audit protocol:** the diagnostics as a five-step procedure (paper, Sec. 6).
+
 ## Model
 
 Each period a value v is drawn; I learning informed traders (plus optional
@@ -52,16 +60,20 @@ Configurable pieces (`MarketConfig`, CLI flags in `run.py`):
 | `--algo q/dqn/ppo`, `--gamma`, `--agent-kwargs` | learner (Q options: `alpha`, `beta_decay`, `alpha_schedule`, `update` = taken/counterfactual, `shared`) |
 | `--impulse-reps`, `--shock-devs` | rival-deviation test and noise-shock test |
 | `--checkpoint` | resumable training |
+| `--engine numba` | compiled training loop for tabular Q (10-20x faster; same model, different random draws) |
 
 ## Reproducing
 
 ```bash
-pip install -e ".[dev]" matplotlib
-pytest                                       # 72 tests
+pip install -e ".[dev]" matplotlib numba
+pytest                                       # 80 tests
 ./experiments/run_all.sh                     # all sweeps; resumable after interruption
 PYTHONPATH=src python experiments/mechanism.py            # single trader, step size
 PYTHONPATH=src python experiments/mechanism.py --gamma    # single trader, discount factor
 PYTHONPATH=src python experiments/rare_states.py          # off-path states and shock responses
+PYTHONPATH=src python experiments/bertrand_validation.py                   # Calvano et al. validation
+PYTHONPATH=src python experiments/bertrand_validation.py --market quotes    # dealers
+PYTHONPATH=src python experiments/sustain_curves.py                        # sustainability bounds
 python paper/make_results.py                 # figures + numbers.tex
 cd paper && latexmk -pdf main.tex
 ```
@@ -76,6 +88,10 @@ batched per-agent networks (DQN, PPO).
 ```
 src/kylecollusion/
   theory.py        benchmarks, deviation signal-to-noise
+  sustain.py       trigger-strategy sustainability bounds
+  fast.py          numba training engine
+  bertrand.py      Calvano et al. (2020) logit Bertrand with Q-learning
+  quotes.py        competing dealers under adverse selection
   market.py        batched repeated Kyle market
   agents/          tabular Q (constant/decaying step, taken/counterfactual updates), DQN, PPO
   diagnostics.py   deviation test, noise-shock test, convergence statistics
