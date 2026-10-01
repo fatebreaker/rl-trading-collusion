@@ -1,12 +1,75 @@
 {
-  "name": "exp9_interventions",
-  "base": ["--algo", "q", "--sessions", "200", "--steps", "6000000", "--eval-steps", "20000",
-           "--impulse-reps", "40", "--log-every", "1000000", "--checkpoint-every", "1000000"],
-  "runs": {
-    "counterfactual_residual": ["--memory", "residual", "--agent-kwargs", "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"],
-    "counterfactual_none": ["--memory", "none", "--agent-kwargs", "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"],
-    "counterfactual_residual_myopic": ["--memory", "residual", "--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"],
-    "opaque_residual": ["--memory", "residual", "--disclosure-noise", "2.0", "--agent-kwargs", "{\"beta_decay\": 1e-6}"],
-    "passive2_residual": ["--memory", "residual", "--n-passive", "2", "--agent-kwargs", "{\"beta_decay\": 1e-6}"]
-  }
+ "name": "exp9_interventions",
+ "base": [
+  "--algo",
+  "q",
+  "--sessions",
+  "200",
+  "--steps",
+  "6000000",
+  "--eval-steps",
+  "20000",
+  "--impulse-reps",
+  "40",
+  "--log-every",
+  "1000000",
+  "--checkpoint-every",
+  "1000000"
+ ],
+ "runs": {
+  "random35": [
+   "--memory",
+   "random",
+   "--n-random-states",
+   "35",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6}"
+  ],
+  "counterfactual_residual": [
+   "--memory",
+   "residual",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"
+  ],
+  "counterfactual_none": [
+   "--memory",
+   "none",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"
+  ],
+  "opaque_residual": [
+   "--memory",
+   "residual",
+   "--disclosure-noise",
+   "2.0",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6}"
+  ],
+  "random35_myopic": [
+   "--memory",
+   "random",
+   "--n-random-states",
+   "35",
+   "--gamma",
+   "0",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6}"
+  ],
+  "counterfactual_residual_myopic": [
+   "--memory",
+   "residual",
+   "--gamma",
+   "0",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"
+  ],
+  "passive2_residual": [
+   "--memory",
+   "residual",
+   "--n-passive",
+   "2",
+   "--agent-kwargs",
+   "{\"beta_decay\": 1e-6}"
+  ]
+ }
 }

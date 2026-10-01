@@ -29,7 +29,7 @@ import numpy as np
 
 from .theory import Benchmarks, kyle_benchmarks
 
-MEMORY_MODES = ("none", "flow", "residual", "orders", "price")
+MEMORY_MODES = ("none", "flow", "residual", "orders", "price", "random")
 GRID_MODES = ("wide", "bracket")
 
 
@@ -69,7 +69,11 @@ class MarketConfig:
     #   price     (v_{t-1}, binned p_{t-1}); the state used by Dou et al. The
     #             price is binned as a surprise relative to the Nash-expected
     #             price given v_{t-1}, in units of the noise-driven price sd.
+    #   random    placebo: a state drawn uniformly at random each period from
+    #             n_random_states, carrying no information. Same table size as
+    #             an informative memory, so it isolates state-space size.
     memory: str = "residual"
+    n_random_states: int = 35
     n_flow_bins: int = 7
     n_price_bins: int = 15
     # Market maker re-estimates lambda_B with exponentially weighted moments.
@@ -101,6 +105,9 @@ class KyleMarket:
         self.S = n_sessions
         self.I = cfg.n_informed
         self.rng = np.random.default_rng(seed)
+        # Separate stream for the random-memory placebo, so the value and noise
+        # draws are identical to every other memory mode with the same seed.
+        self.rng_mem = np.random.default_rng([seed, 7919])
         self._build_static()
         self.u_shock = np.zeros(self.S)
 
@@ -161,6 +168,8 @@ class KyleMarket:
             self.n_states = cfg.n_values * nb
         elif cfg.memory == "orders":
             self.n_states = cfg.n_values * cfg.n_actions
+        elif cfg.memory == "random":
+            self.n_states = cfg.n_random_states
         else:
             self.n_states = cfg.n_values * npb
 
@@ -176,6 +185,8 @@ class KyleMarket:
         self._build_static()
         if "u_shock" not in state:
             self.u_shock = np.zeros(self.S)
+        if "rng_mem" not in state:
+            self.rng_mem = np.random.default_rng([0, 7919])
         if "prev_rival_idx" not in state:
             self.prev_rival_idx = np.zeros((self.S, self.I), dtype=np.int64)
             self.prev_price = np.zeros(self.S)
@@ -252,6 +263,10 @@ class KyleMarket:
             s = self.prev_v_idx[:, None] * cfg.n_actions + self.prev_rival_idx
             f_prev_v = np.broadcast_to(prev_v[:, None], (S, I))
             f_mem = self.prev_rival_idx / max(cfg.n_actions - 1, 1) * 2.0 - 1.0
+        elif cfg.memory == "random":
+            s = self.rng_mem.integers(cfg.n_random_states, size=(S, I))
+            f_prev_v = np.zeros((S, I))
+            f_mem = s / max(cfg.n_random_states - 1, 1) * 2.0 - 1.0
         elif cfg.memory == "price":
             b = self.bench
             expected = b.lam_nash * (b.agg_nash + self.passive_beta) * self.values[self.prev_v_idx]

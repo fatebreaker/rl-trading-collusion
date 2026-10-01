@@ -135,3 +135,15 @@ def test_old_checkpoints_still_load():
     old.__setstate__(state)
     _, obs, _ = old.step(np.zeros((4, 2), dtype=int))
     assert obs["s"].shape == (4, 2)
+
+
+def test_random_memory_is_uninformative_and_keeps_draws():
+    a = KyleMarket(MarketConfig(memory="random", n_random_states=35), 8, seed=4)
+    b = KyleMarket(MarketConfig(memory="none"), 8, seed=4)
+    oa, ob = a.reset(), b.reset()
+    for _ in range(100):
+        act = np.full((8, 2), 15)
+        _, oa, ia = a.step(act)
+        _, ob, ib = b.step(act)
+        assert np.array_equal(ia["v"], ib["v"]) and np.allclose(ia["p"], ib["p"])
+        assert oa["s"].min() >= 0 and oa["s"].max() < 35
