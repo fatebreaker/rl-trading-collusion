@@ -5,7 +5,7 @@
 # that is already running, because it waits for all experiment processes first.
 cd "$(dirname "$0")/.."
 export PYTHONPATH=src
-while pgrep -f "python3 -m kylecollusion.run" > /dev/null; do sleep 30; done
+while pgrep -f "python3 -m kylecollusion.run|experiments/sweep.py" > /dev/null; do sleep 30; done
 for g in "$@"; do
   python3 experiments/sweep.py "experiments/grids/$g.json" --workers 4
 done
