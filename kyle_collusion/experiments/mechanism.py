@@ -22,10 +22,13 @@ UPDATES = ("taken", "counterfactual")
 SESSIONS, STEPS, BETA = 100, 300_000, 2e-5
 
 
-def learned_intensity(alpha: float, update: str, seed: int = 0) -> np.ndarray:
+GAMMAS = (0.0, 0.5, 0.8, 0.95)
+
+
+def learned_intensity(alpha: float, update: str, seed: int = 0, gamma: float = 0.0) -> np.ndarray:
     cfg = MarketConfig(n_informed=1, memory="none", mm_fixed=True, n_actions=41)
     env = KyleMarket(cfg, SESSIONS, seed=seed)
-    agent = TabularQ(env, alpha=alpha, gamma=0.0, beta_decay=BETA, update=update, seed=seed + 1)
+    agent = TabularQ(env, alpha=alpha, gamma=gamma, beta_decay=BETA, update=update, seed=seed + 1)
     obs = env.reset()
     for t in range(STEPS):
         a = agent.act(obs, t)
@@ -36,6 +39,20 @@ def learned_intensity(alpha: float, update: str, seed: int = 0) -> np.ndarray:
     v = env.values
     slope = (greedy * v).sum(1) / (v * v).sum()  # per-session intensity
     return slope * 2 * env.bench.lam_nash  # 1.0 = optimal intensity
+
+
+def main_gamma():
+    """Same single-trader setting, alpha fixed at 0.15, discount factor varied."""
+    out = {"gammas": GAMMAS, "alpha": 0.15, "sessions": SESSIONS, "steps": STEPS, "results": {}}
+    for g in GAMMAS:
+        rel = learned_intensity(0.15, "taken", gamma=g)
+        out["results"][str(g)] = {
+            "mean": float(rel.mean()),
+            "ci95": float(1.96 * rel.std(ddof=1) / np.sqrt(len(rel))),
+        }
+        print(f"gamma={g:<5} learned/optimal intensity = {rel.mean():.3f}", flush=True)
+    os.makedirs("results/mechanism", exist_ok=True)
+    json.dump(out, open("results/mechanism/single_trader_gamma.json", "w"), indent=1)
 
 
 def main():
@@ -55,4 +72,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main_gamma() if "--gamma" in sys.argv else main()
