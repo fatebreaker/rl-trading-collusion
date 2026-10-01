@@ -147,3 +147,18 @@ def test_random_memory_is_uninformative_and_keeps_draws():
         _, ob, ib = b.step(act)
         assert np.array_equal(ia["v"], ib["v"]) and np.allclose(ia["p"], ib["p"])
         assert oa["s"].min() >= 0 and oa["s"].max() < 35
+
+
+def test_grid_price_bins_use_interior_states_at_large_xi():
+    """With grid-based binning, collusive-to-Nash play spreads over interior
+    price bins at xi = 500 instead of saturating the two outer bins."""
+    cfg = MarketConfig(memory="price", grid_mode="bracket", n_values=10, n_actions=15,
+                       sigma_u=0.1, xi=500.0, price_bins="grid")
+    env = KyleMarket(cfg, 64, seed=2)
+    obs = env.reset()
+    seen = set()
+    for t in range(2000):
+        a = env.rng.integers(env.n_actions, size=(64, 2))
+        _, obs, _ = env.step(a)
+        seen |= set((obs["s"][:, 0] % cfg.n_price_bins).tolist())
+    assert len(seen - {0, cfg.n_price_bins - 1}) >= 8

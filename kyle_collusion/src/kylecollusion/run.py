@@ -139,6 +139,7 @@ def run(args) -> dict:
         theta=args.theta,
         n_price_bins=args.n_price_bins,
         n_random_states=args.n_random_states,
+        price_bins=args.price_bins,
         n_flow_bins=args.n_flow_bins,
         mm_halflife=args.mm_halflife,
         mm_fixed=args.mm_fixed,
@@ -222,6 +223,7 @@ def parse_args(argv=None):
     ap.add_argument("--theta", type=float, default=0.1)
     ap.add_argument("--n-price-bins", type=int, default=15)
     ap.add_argument("--n-random-states", type=int, default=35)
+    ap.add_argument("--price-bins", choices=("noise", "grid"), default="noise")
     ap.add_argument("--n-flow-bins", type=int, default=7)
     ap.add_argument("--mm-halflife", type=float, default=2000.0)
     ap.add_argument("--mm-fixed", action="store_true")

@@ -74,6 +74,15 @@ class MarketConfig:
     #             an informative memory, so it isolates state-space size.
     memory: str = "residual"
     n_random_states: int = 35
+    # How the price state is binned.
+    #   noise  surprise relative to the Nash-expected price, in units of the
+    #          noise-driven price sd (+-2.5 sd). Saturates when xi is large,
+    #          because then any intensity away from Nash moves the price by
+    #          hundreds of noise sd.
+    #   grid   Dou et al. style: the price as a position within the range the
+    #          order grid can produce given v_{t-1} (plus a +-2 sigma_u margin),
+    #          at Nash pricing; n_price_bins equal bins.
+    price_bins: str = "noise"
     n_flow_bins: int = 7
     n_price_bins: int = 15
     # Market maker re-estimates lambda_B with exponentially weighted moments.
@@ -86,6 +95,8 @@ class MarketConfig:
             raise ValueError(f"memory must be one of {MEMORY_MODES}")
         if self.grid_mode not in GRID_MODES:
             raise ValueError(f"grid_mode must be one of {GRID_MODES}")
+        if self.price_bins not in ("noise", "grid"):
+            raise ValueError("price_bins must be 'noise' or 'grid'")
 
 
 def value_grid(n: int, sigma_v: float) -> np.ndarray:
@@ -159,6 +170,12 @@ class KyleMarket:
         self._edges_resid = np.linspace(-2, 2, nb + 1)[1:-1] * self.sd_resid
         npb = cfg.n_price_bins
         self._edges_price = np.linspace(-2.5, 2.5, npb + 1)[1:-1]
+        # Grid-based price range per lagged value (used when price_bins="grid").
+        flow_lo = cfg.n_informed * self.grid_v.min(1) + self.passive_beta * self.values - 2 * cfg.sigma_u
+        flow_hi = cfg.n_informed * self.grid_v.max(1) + self.passive_beta * self.values + 2 * cfg.sigma_u
+        self._p_lo = b.lam_nash * flow_lo
+        self._p_span = np.maximum(b.lam_nash * (flow_hi - flow_lo), 1e-12)
+        self._edges_unit = np.linspace(0.0, 1.0, npb + 1)[1:-1]
 
         if cfg.memory == "none":
             self.n_states = 1
@@ -269,9 +286,15 @@ class KyleMarket:
             f_mem = s / max(cfg.n_random_states - 1, 1) * 2.0 - 1.0
         elif cfg.memory == "price":
             b = self.bench
-            expected = b.lam_nash * (b.agg_nash + self.passive_beta) * self.values[self.prev_v_idx]
-            surprise = (self.prev_price - expected) / self.sd_price
-            pbin = np.digitize(surprise, self._edges_price)
+            if getattr(cfg, "price_bins", "noise") == "grid":
+                k = self.prev_v_idx
+                surprise = (self.prev_price - self.m_v - self._p_lo[k]) / self._p_span[k]
+                pbin = np.digitize(surprise, self._edges_unit)
+                surprise = 2.0 * surprise - 1.0  # feature in roughly [-1, 1]
+            else:
+                expected = b.lam_nash * (b.agg_nash + self.passive_beta) * self.values[self.prev_v_idx]
+                surprise = (self.prev_price - expected) / self.sd_price
+                pbin = np.digitize(surprise, self._edges_price)
             s = np.broadcast_to(
                 (self.prev_v_idx * cfg.n_price_bins + pbin)[:, None], (S, I)
             ).copy()
