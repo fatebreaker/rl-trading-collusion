@@ -1,0 +1,13 @@
+{
+  "name": "exp12_dou_seeds",
+  "base": ["--algo", "q", "--sessions", "100", "--steps", "15000000", "--eval-steps", "20000",
+           "--sigma-u", "0.1", "--n-values", "10", "--n-actions", "15", "--grid-mode", "bracket",
+           "--memory", "price", "--price-bins", "grid", "--xi", "500", "--seed", "1",
+           "--impulse-reps", "20", "--shock-devs", "0.05,0.25,1",
+           "--log-every", "1000000", "--checkpoint-every", "1000000"],
+  "runs": {
+    "separate_g095_s1": ["--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05}"],
+    "shared_g095_s1": ["--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05, \"shared\": true}"],
+    "shared_g0_s1": ["--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 4e-7, \"alpha\": 0.05, \"shared\": true}"]
+  }
+}

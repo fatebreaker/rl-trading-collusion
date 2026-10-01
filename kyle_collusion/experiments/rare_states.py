@@ -23,14 +23,14 @@ from kylecollusion.run import train
 SESSIONS, STEPS = 20, 15_000_000
 
 
-def main():
+def main(price_bins: str = "noise"):
     cfg = MarketConfig(sigma_u=0.1, n_values=10, n_actions=15, grid_mode="bracket",
-                       memory="price", xi=500.0)
+                       memory="price", xi=500.0, price_bins=price_bins)
     env = KyleMarket(cfg, SESSIONS, seed=11)
     agent = TabularQ(env, alpha=0.05, gamma=0.0, beta_decay=4e-7, shared=True, seed=12)
     os.makedirs("checkpoints", exist_ok=True)
     env, agent, obs, _ = train(env, agent, STEPS, log_every=1_000_000,
-                               checkpoint="checkpoints/rare_states.pkl", checkpoint_every=1_000_000)
+                               checkpoint=f"checkpoints/rare_states_{price_bins}.pkl", checkpoint_every=1_000_000)
 
     nb, nv = cfg.n_price_bins, cfg.n_values
     visits = np.zeros((SESSIONS, nv * nb))
@@ -64,8 +64,11 @@ def main():
     for b, d in out["by_bin"].items():
         print(f"bin {b:>2}: visit share {d['visit_share']:.4f}  intensity (0=cartel,1=Nash) {d['nash_share_of_intensity']:.3f}")
     os.makedirs("results/mechanism", exist_ok=True)
-    json.dump(out, open("results/mechanism/rare_states.json", "w"), indent=1)
+    name = "rare_states.json" if price_bins == "noise" else f"rare_states_{price_bins}.json"
+    json.dump(out, open(f"results/mechanism/{name}", "w"), indent=1)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    main("grid" if "--grid" in sys.argv else "noise")
