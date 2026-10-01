@@ -13,7 +13,8 @@ checkpointed run resumes exactly. The draws differ from the numpy engine, so
 the two engines agree in distribution, not path by path
 (tests/test_fast.py checks this).
 
-Supported: memory none / flow / residual / orders / price (both binnings);
+Supported: memory none / flow / residual / orders / price (all binnings) /
+value; calendar-time or value-specific exploration counters;
 wide or bracket grids; xi, theta; passive traders; adaptive or fixed market
 maker. Not supported (use the numpy engine): random memory, ticks, disclosure
 noise, counterfactual updates, visit-based step sizes.
@@ -30,7 +31,7 @@ try:
 except ImportError:  # pragma: no cover
     nb = None
 
-MEM_CODES = {"none": 0, "flow": 1, "residual": 2, "orders": 3, "price": 4}
+MEM_CODES = {"none": 0, "flow": 1, "residual": 2, "orders": 3, "price": 4, "value": 5}
 
 _GOLD = np.uint64(0x9E3779B97F4A7C15)
 _M1 = np.uint64(0xBF58476D1CE4E5B9)
@@ -100,7 +101,8 @@ if nb is not None:
     @nb.njit(inline="always")
     def _state(mem, i, s, prev_v_idx, prev_flow, prev_resid, prev_rival_idx, prev_price, m_v,
                edges_flow, edges_resid, n_flow_bins, n_actions, price_grid, p_lo, p_span,
-               edges_unit, edges_price, expected_coef, values, sd_price, n_price_bins):
+               edges_unit, edges_price, expected_coef, values, sd_price, n_price_bins,
+               dou_lo, dou_step):
         if mem == 0:
             return 0
         if mem == 1:
@@ -110,7 +112,16 @@ if nb is not None:
             return k * n_flow_bins + _digitize(prev_resid[s, i], edges_resid)
         if mem == 3:
             return k * n_actions + prev_rival_idx[s, i]
-        if price_grid:
+        if mem == 5:
+            return k
+        if price_grid == 2:
+            j = int(np.rint((prev_price[s] - dou_lo) / dou_step))
+            if j < 0:
+                j = 0
+            if j > n_price_bins - 1:
+                j = n_price_bins - 1
+            return k * n_price_bins + j
+        if price_grid == 1:
             sur = (prev_price[s] - m_v[s] - p_lo[k]) / p_span[k]
             return k * n_price_bins + _digitize(sur, edges_unit)
         sur = (prev_price[s] - expected_coef * values[k]) / sd_price
@@ -122,7 +133,8 @@ if nb is not None:
                prev_price, m_v, m_y, m_yy, m_vy, lam,
                values, grid_v, passive_beta, sigma_u, mm_fixed, mm_decay, xi, theta,
                mem, edges_flow, edges_resid, n_flow_bins, price_grid, p_lo, p_span, edges_unit,
-               edges_price, expected_coef, sd_price, n_price_bins):
+               edges_price, expected_coef, sd_price, n_price_bins, dou_lo, dou_step,
+               by_value, vcount):
         S = Q.shape[0]
         I = prev_resid.shape[1]
         A = grid_v.shape[1]
@@ -136,10 +148,14 @@ if nb is not None:
                 st[i] = _state(mem, i, s, prev_v_idx, prev_flow, prev_resid, prev_rival_idx,
                                prev_price, m_v, edges_flow, edges_resid, n_flow_bins, A,
                                price_grid, p_lo, p_span, edges_unit, edges_price,
-                               expected_coef, values, sd_price, n_price_bins)
+                               expected_coef, values, sd_price, n_price_bins, dou_lo, dou_step)
             for t in range(start, stop):
-                eps = math.exp(-beta_decay * t)
                 k = v_idx[s]
+                if by_value:
+                    eps = math.exp(-beta_decay * vcount[s, k])
+                    vcount[s, k] += 1
+                else:
+                    eps = math.exp(-beta_decay * t)
                 for i in range(I):
                     tb = 0 if shared else i
                     best, bq = 0, Q[s, tb, st[i], k, 0]
@@ -186,7 +202,7 @@ if nb is not None:
                     st2[i] = _state(mem, i, s, prev_v_idx, prev_flow, prev_resid, prev_rival_idx,
                                     prev_price, m_v, edges_flow, edges_resid, n_flow_bins, A,
                                     price_grid, p_lo, p_span, edges_unit, edges_price,
-                                    expected_coef, values, sd_price, n_price_bins)
+                                    expected_coef, values, sd_price, n_price_bins, dou_lo, dou_step)
                 if shared:
                     # sequential: each trader's update sees the previous one's
                     for i in range(I):
@@ -220,7 +236,9 @@ def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
         setattr(env, name, np.ascontiguousarray(getattr(env, name), dtype=np.int64))
     for name in ("prev_flow", "prev_resid", "prev_rivals", "prev_price", "m_v", "m_y", "m_yy", "m_vy", "lam"):
         setattr(env, name, np.ascontiguousarray(getattr(env, name), dtype=np.float64))
-    price_grid = getattr(cfg, "price_bins", "noise") == "grid"
+    price_grid = {"noise": 0, "grid": 1, "dou": 2}[getattr(cfg, "price_bins", "noise")]
+    by_value = bool(getattr(agent, "explore_by_value", False))
+    vcount = agent.vcount if by_value else np.zeros((1, 1), dtype=np.int64)
     expected_coef = b.lam_nash * (b.agg_nash + env.passive_beta)
     _train(
         agent.Q, agent.shared, float(agent.alpha), float(agent.gamma), float(agent.beta_decay),
@@ -240,5 +258,7 @@ def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
         np.ascontiguousarray(env._edges_unit, dtype=np.float64),
         np.ascontiguousarray(env._edges_price, dtype=np.float64),
         float(expected_coef), float(env.sd_price), int(cfg.n_price_bins),
+        float(getattr(env, "_dou_lo", 0.0)), float(getattr(env, "_dou_step", 1.0)),
+        by_value, vcount,
     )
     env.u_shock = np.zeros(env.S)

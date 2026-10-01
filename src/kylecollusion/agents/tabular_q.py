@@ -47,6 +47,7 @@ class TabularQ:
         alpha_min: float = 0.0,
         update: str = "taken",
         shared: bool = False,
+        explore_by_value: bool = False,
         seed: int = 0,
     ):
         if shared and update != "taken":
@@ -67,6 +68,10 @@ class TabularQ:
         self.alpha_min = alpha_min
         self.update = update
         self.shared = shared
+        # Dou et al. (2025): epsilon depends on how often the current value has
+        # been visited, eps = exp(-beta * t(v)), instead of on calendar time.
+        self.explore_by_value = explore_by_value
+        self.vcount = np.zeros((env.S, env.n_values), dtype=np.int64) if explore_by_value else None
         self.rng = np.random.default_rng(seed)
 
         S, I = env.S, env.I
@@ -96,7 +101,13 @@ class TabularQ:
         a = self._rows(obs).argmax(axis=-1)
         if greedy:
             return a
-        explore = self.rng.random(a.shape) < self.epsilon(t)
+        if self.explore_by_value:
+            si = np.arange(self.env.S)
+            eps = np.exp(-self.beta_decay * self.vcount[si, obs["v_idx"]])
+            self.vcount[si, obs["v_idx"]] += 1
+            explore = self.rng.random(a.shape) < eps[:, None]
+        else:
+            explore = self.rng.random(a.shape) < self.epsilon(t)
         if explore.any():
             a = np.where(explore, self.rng.integers(self.env.n_actions, size=a.shape), a)
         return a

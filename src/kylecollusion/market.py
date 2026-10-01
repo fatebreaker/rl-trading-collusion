@@ -29,7 +29,7 @@ import numpy as np
 
 from .theory import Benchmarks, kyle_benchmarks
 
-MEMORY_MODES = ("none", "flow", "residual", "orders", "price", "random")
+MEMORY_MODES = ("none", "flow", "residual", "orders", "price", "random", "value")
 GRID_MODES = ("wide", "bracket")
 
 
@@ -79,9 +79,13 @@ class MarketConfig:
     #          noise-driven price sd (+-2.5 sd). Saturates when xi is large,
     #          because then any intensity away from Nash moves the price by
     #          hundreds of noise sd.
-    #   grid   Dou et al. style: the price as a position within the range the
-    #          order grid can produce given v_{t-1} (plus a +-2 sigma_u margin),
-    #          at Nash pricing; n_price_bins equal bins.
+    #   grid   the price as a position within the range the order grid can
+    #          produce given v_{t-1} (plus a +-2 sigma_u margin), at Nash
+    #          pricing; n_price_bins equal bins.
+    #   dou    exactly Dou, Goldstein & Ji (2025, Sec. 4.2): one common grid of
+    #          n_price_bins points on [p_L - iota (p_H - p_L), p_H + iota (p_H - p_L)],
+    #          p_H/L = lambda^N I max/min{x^M, x^N} +- 1.96 sigma_u over all
+    #          values; the state is the nearest grid point.
     price_bins: str = "noise"
     n_flow_bins: int = 7
     n_price_bins: int = 15
@@ -95,8 +99,8 @@ class MarketConfig:
             raise ValueError(f"memory must be one of {MEMORY_MODES}")
         if self.grid_mode not in GRID_MODES:
             raise ValueError(f"grid_mode must be one of {GRID_MODES}")
-        if self.price_bins not in ("noise", "grid"):
-            raise ValueError("price_bins must be 'noise' or 'grid'")
+        if self.price_bins not in ("noise", "grid", "dou"):
+            raise ValueError("price_bins must be 'noise', 'grid' or 'dou'")
 
 
 def value_grid(n: int, sigma_v: float) -> np.ndarray:
@@ -176,6 +180,13 @@ class KyleMarket:
         self._p_lo = b.lam_nash * flow_lo
         self._p_span = np.maximum(b.lam_nash * (flow_hi - flow_lo), 1e-12)
         self._edges_unit = np.linspace(0.0, 1.0, npb + 1)[1:-1]
+        # Dou et al. common price grid (price_bins="dou").
+        xs = np.concatenate([b.beta_nash * self.values, b.beta_coll * self.values])
+        p_hi = b.lam_nash * cfg.n_informed * xs.max() + 1.96 * cfg.sigma_u
+        p_lo = b.lam_nash * cfg.n_informed * xs.min() - 1.96 * cfg.sigma_u
+        span = p_hi - p_lo
+        self._dou_lo = p_lo - cfg.bracket_iota * span
+        self._dou_step = (span * (1 + 2 * cfg.bracket_iota)) / max(npb - 1, 1)
 
         if cfg.memory == "none":
             self.n_states = 1
@@ -187,6 +198,8 @@ class KyleMarket:
             self.n_states = cfg.n_values * cfg.n_actions
         elif cfg.memory == "random":
             self.n_states = cfg.n_random_states
+        elif cfg.memory == "value":
+            self.n_states = cfg.n_values
         else:
             self.n_states = cfg.n_values * npb
 
@@ -284,9 +297,17 @@ class KyleMarket:
             s = self.rng_mem.integers(cfg.n_random_states, size=(S, I))
             f_prev_v = np.zeros((S, I))
             f_mem = s / max(cfg.n_random_states - 1, 1) * 2.0 - 1.0
+        elif cfg.memory == "value":
+            s = np.broadcast_to(self.prev_v_idx[:, None], (S, I)).copy()
+            f_prev_v = np.broadcast_to(prev_v[:, None], (S, I))
+            f_mem = np.zeros((S, I))
         elif cfg.memory == "price":
             b = self.bench
-            if getattr(cfg, "price_bins", "noise") == "grid":
+            if getattr(cfg, "price_bins", "noise") == "dou":
+                pbin = np.clip(np.rint((self.prev_price - self._dou_lo) / self._dou_step),
+                               0, cfg.n_price_bins - 1).astype(np.int64)
+                surprise = 2.0 * pbin / max(cfg.n_price_bins - 1, 1) - 1.0
+            elif getattr(cfg, "price_bins", "noise") == "grid":
                 k = self.prev_v_idx
                 surprise = (self.prev_price - self.m_v - self._p_lo[k]) / self._p_span[k]
                 pbin = np.digitize(surprise, self._edges_unit)

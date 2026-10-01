@@ -1,0 +1,14 @@
+{
+  "name": "exp16_dou_faithful",
+  "base": ["--algo", "q", "--engine", "numba", "--sessions", "100", "--steps", "400000000", "--eval-steps", "20000",
+           "--n-values", "10", "--n-actions", "15", "--grid-mode", "bracket",
+           "--price-bins", "dou", "--n-price-bins", "31", "--xi", "500",
+           "--impulse-reps", "40", "--shock-devs", "0.05,0.25,1", "--conv-window", "10000000",
+           "--log-every", "40000000", "--checkpoint-every", "40000000"],
+  "runs": {
+    "price_g095_lownoise": ["--sigma-u", "0.1", "--memory", "price", "--agent-kwargs", "{\"alpha\": 0.01, \"beta_decay\": 5e-7, \"explore_by_value\": true}"],
+    "price_g0_lownoise": ["--sigma-u", "0.1", "--memory", "price", "--gamma", "0", "--agent-kwargs", "{\"alpha\": 0.01, \"beta_decay\": 5e-7, \"explore_by_value\": true}"],
+    "value_g095_lownoise": ["--sigma-u", "0.1", "--memory", "value", "--agent-kwargs", "{\"alpha\": 0.01, \"beta_decay\": 5e-7, \"explore_by_value\": true}"],
+    "price_g095_highnoise": ["--sigma-u", "100", "--memory", "price", "--agent-kwargs", "{\"alpha\": 0.01, \"beta_decay\": 5e-7, \"explore_by_value\": true}"]
+  }
+}
