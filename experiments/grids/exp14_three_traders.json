@@ -1,0 +1,11 @@
+{
+  "name": "exp14_three_traders",
+  "base": ["--algo", "q", "--n-informed", "3", "--sessions", "200", "--steps", "6000000", "--eval-steps", "20000",
+           "--impulse-reps", "40", "--log-every", "1000000", "--checkpoint-every", "1000000"],
+  "runs": {
+    "residual_g095": ["--memory", "residual", "--agent-kwargs", "{\"beta_decay\": 1e-6}"],
+    "residual_g0": ["--memory", "residual", "--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 1e-6}"],
+    "none_g095": ["--memory", "none", "--agent-kwargs", "{\"beta_decay\": 1e-6}"],
+    "counterfactual_residual": ["--memory", "residual", "--agent-kwargs", "{\"beta_decay\": 1e-6, \"update\": \"counterfactual\"}"]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "exp15_long",
+  "base": ["--algo", "q", "--sessions", "25", "--steps", "60000000", "--eval-steps", "20000",
+           "--sigma-u", "0.1", "--n-values", "10", "--n-actions", "15", "--grid-mode", "bracket",
+           "--memory", "price", "--price-bins", "grid", "--xi", "500",
+           "--impulse-reps", "40", "--shock-devs", "0.05,0.25,1",
+           "--log-every", "5000000", "--checkpoint-every", "2000000"],
+  "runs": {
+    "shared_g095_60M": ["--agent-kwargs", "{\"beta_decay\": 1e-7, \"alpha\": 0.05, \"shared\": true}"],
+    "shared_g0_60M": ["--gamma", "0", "--agent-kwargs", "{\"beta_decay\": 1e-7, \"alpha\": 0.05, \"shared\": true}"],
+    "separate_g095_60M": ["--agent-kwargs", "{\"beta_decay\": 1e-7, \"alpha\": 0.05}"]
+  }
+}
