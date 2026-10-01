@@ -21,6 +21,14 @@ bias ("over-pruning").
   investors it is hundreds of standard deviations (`theory.deviation_gap`).
 - **Mechanism:** with no rival at all, constant-step Q-learning under-trades
   by about 0.91 sqrt(alpha); counterfactual updates remove the bias.
+- **Findings:** no punishment in any configuration (even with perfect
+  monitoring, or deviations 625 noise sd large); myopic placebos and an
+  uninformative memory reproduce the "collusive" outcome; with passive traders
+  learners trade half their Nash intensity although collusion would mean
+  trading more; reducing transparency changes nothing; counterfactual updating
+  restores competition; the collusion index rises steadily with the step size;
+  a myopic shared-table learner shows the noise-shock "trigger" signature,
+  which comes from never-visited states.
 
 ## Model
 
@@ -36,11 +44,12 @@ Configurable pieces (`MarketConfig`, CLI flags in `run.py`):
 
 | flag | meaning |
 |---|---|
-| `--memory none/flow/residual/orders/price` | what traders remember from last period |
+| `--memory none/flow/residual/orders/price/random` | what traders remember from last period (`random`: uninformative placebo state, `--n-random-states`) |
+| `--price-bins noise/grid` | price state binned in noise-sd units, or over the range the order grid can produce (Dou et al. style) |
 | `--grid-mode wide/bracket` | shared symmetric order grid, or Dou et al.'s per-value cartel-to-Nash bracket |
 | `--xi`, `--theta` | information-insensitive investors and market-maker weights |
 | `--n-passive`, `--disclosure-noise`, `--tick`, `--order-cap` | market-design interventions |
-| `--algo q/dqn/ppo`, `--gamma`, `--agent-kwargs` | learner (Q options: `alpha`, `beta_decay`, `alpha_schedule`, `update`) |
+| `--algo q/dqn/ppo`, `--gamma`, `--agent-kwargs` | learner (Q options: `alpha`, `beta_decay`, `alpha_schedule`, `update` = taken/counterfactual, `shared`) |
 | `--impulse-reps`, `--shock-devs` | rival-deviation test and noise-shock test |
 | `--checkpoint` | resumable training |
 
@@ -50,7 +59,9 @@ Configurable pieces (`MarketConfig`, CLI flags in `run.py`):
 pip install -e ".[dev]" matplotlib
 pytest                                       # 72 tests
 ./experiments/run_all.sh                     # all sweeps; resumable after interruption
-PYTHONPATH=src python experiments/mechanism.py
+PYTHONPATH=src python experiments/mechanism.py            # single trader, step size
+PYTHONPATH=src python experiments/mechanism.py --gamma    # single trader, discount factor
+PYTHONPATH=src python experiments/rare_states.py          # off-path states and shock responses
 python paper/make_results.py                 # figures + numbers.tex
 cd paper && latexmk -pdf main.tex
 ```
