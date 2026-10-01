@@ -1,12 +1,11 @@
 [project]
-name = "cbg"
+name = "rl-trading-collusion"
 version = "0.1.0"
-description = "Cross-benchmark generalization study for LLM security agents"
+description = "Algorithmic collusion among learning informed traders in a repeated Kyle market, and market-design interventions against it"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = ["numpy>=1.24", "torch>=2.1"]
 
 [project.optional-dependencies]
-providers = ["anthropic", "openai"]
 dev = ["pytest"]
 
 [build-system]

@@ -6,10 +6,7 @@ build/
 dist/
 .venv/
 venv/
-data/
-trajectories/
-results/
 .env
-kyle_collusion/results/**/*.log
-!kyle_collusion/results/
 checkpoints/
+results/**/*.log
+results/*.log
