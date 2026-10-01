@@ -33,6 +33,10 @@ VARIANTS = {
     "noise": dict(cfg={"profit_noise": 0.1}, gamma=0.95),
     "noise_myopic": dict(cfg={"profit_noise": 0.1}, gamma=0.0),
     "counterfactual": dict(cfg={}, gamma=0.95, update="counterfactual"),
+    # Calvano et al.'s own memoryless specification (online appendix A4.1:
+    # k = 0, delta = 0, beta = 1e-4, alpha = 0.25), and the same with delta = 0.95
+    "nomemory_calvano_spec": dict(cfg={"memory": "none"}, gamma=0.0, alpha=0.25, beta=1e-4, steps=200_000),
+    "nomemory_calvano_spec_g095": dict(cfg={"memory": "none"}, gamma=0.95, alpha=0.25, beta=1e-4, steps=200_000),
 }
 QUOTE_VARIANTS = {
     "baseline": dict(cfg={}, gamma=0.95),
@@ -60,7 +64,9 @@ def run(name, spec, steps, sessions, seed, out_dir, market="bertrand"):
     Cfg, Market, _ = MARKETS[market]
     cfg = Cfg(**spec["cfg"])
     env = Market(cfg, sessions, seed=seed)
-    ag = BertrandQ(env, gamma=spec["gamma"], seed=seed, update=spec.get("update", "taken"))
+    ag = BertrandQ(env, gamma=spec["gamma"], seed=seed, update=spec.get("update", "taken"),
+                   alpha=spec.get("alpha", 0.15), beta_decay=spec.get("beta", 4e-6))
+    steps = spec.get("steps", steps)
     t0 = time.time()
     s, change = train(env, ag, steps)
     prof, price, s = evaluate(env, ag, s)
@@ -81,6 +87,7 @@ def run(name, spec, steps, sessions, seed, out_dir, market="bertrand"):
     devs = [deviation_response(env, ag, s, deviator=d) for d in (0, 1)]
     res = {
         "name": name, "gamma": spec["gamma"], "config": spec["cfg"], "steps": steps,
+        "alpha": ag.alpha, "beta": ag.beta,
         "sessions": sessions, "seed": seed, "bench": b, "minutes": (time.time() - t0) / 60,
         "delta": ci(delta), "price": ci(price),
         "policy_change_last_window": float(change.mean()),
