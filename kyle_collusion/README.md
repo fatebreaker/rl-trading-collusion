@@ -1,77 +1,77 @@
-# kylecollusion: can market design stop AI trading collusion?
+# Punishment or Pruning? Diagnosing algorithmic collusion among RL traders
 
-Learning informed traders in a repeated Kyle (1985) market, the conditions under
-which they learn to collude, and which market-design interventions break it —
-tested across tabular Q-learning, DQN and PPO.
+Code, experiments and paper for a study of whether reinforcement-learning
+informed traders in a repeated Kyle (1985) market collude (sustain low trading
+with the threat of punishment) or merely under-trade because of a learning
+bias ("over-pruning").
 
-Motivation: Dou, Goldstein & Ji (NBER w34054, 2025) show that RL-powered
-informed speculators can learn to collude without communicating, cutting
-liquidity and price informativeness. The regulator's question is what to do
-about it. Collusion is known to depend on the learning algorithm (Deng et al.,
-2024), so an intervention is only credible if it works across algorithms.
+- **Paper:** `paper/main.pdf` (sources in `paper/`, figures and numbers built
+  from the result files by `paper/make_results.py`)
+- **Experiment log:** `results/NOTES.md`
+
+## Main ideas
+
+- **Diagnostics** that separate punishment from pruning: a paired
+  rival-deviation test, the Dou et al. (2025) noise-shock test, a myopic
+  placebo (gamma = 0 learners cannot punish), a no-memory control, and
+  learning-rate sensitivity.
+- **Detectability:** in the standard Kyle market a best-response deviation
+  moves order flow by only (I-1)/(2I) noise standard deviations per unit of
+  v / sigma_v, independent of noise volume; with many information-insensitive
+  investors it is hundreds of standard deviations (`theory.deviation_gap`).
+- **Mechanism:** with no rival at all, constant-step Q-learning under-trades
+  by about 0.91 sqrt(alpha); counterfactual updates remove the bias.
 
 ## Model
 
-Each period (repeated forever, with discount factor gamma for the learners):
+Each period a value v is drawn; I learning informed traders (plus optional
+passive Nash traders) submit orders; noise traders add u ~ N(0, sigma_u^2);
+information-insensitive investors demand z = -xi (p - v_bar); the market maker
+prices p = v_bar + lambda y with lambda = (theta * lambda_B + xi) / (theta + xi^2)
+and re-estimates lambda_B from exponentially weighted moments. Exact Nash and
+cartel benchmarks are in `theory.py` (closed form at xi = 0, numerical for
+xi > 0; they reproduce Dou et al.'s published values).
 
-| | |
+Configurable pieces (`MarketConfig`, CLI flags in `run.py`):
+
+| flag | meaning |
 |---|---|
-| value | `v` drawn from a 5-point equiprobable grid with variance `sigma_v^2`, seen by informed traders |
-| learners | `I` informed traders each pick an order `x_i` from a 31-point grid |
-| passive | `P` optional non-learning informed traders playing the Nash strategy |
-| noise | `u ~ N(0, sigma_u^2)` |
-| flow | `y = sum x_i + passive + u` |
-| price | `p = E[v] + lambda (y - E[y])`; the market maker re-estimates `lambda = Cov(v,y)/Var(y)` with exponentially weighted moments (half-life 2000 periods) |
-| profit | `(v - p) x_i` |
+| `--memory none/flow/residual/orders/price` | what traders remember from last period |
+| `--grid-mode wide/bracket` | shared symmetric order grid, or Dou et al.'s per-value cartel-to-Nash bracket |
+| `--xi`, `--theta` | information-insensitive investors and market-maker weights |
+| `--n-passive`, `--disclosure-noise`, `--tick`, `--order-cap` | market-design interventions |
+| `--algo q/dqn/ppo`, `--gamma`, `--agent-kwargs` | learner (Q options: `alpha`, `beta_decay`, `alpha_schedule`, `update`) |
+| `--impulse-reps`, `--shock-devs` | rival-deviation test and noise-shock test |
+| `--checkpoint` | resumable training |
 
-What a learner remembers from the last period (`--memory`):
-- `none`: nothing. It cannot punish, so any under-trading is learning bias. **This is the control.**
-- `flow`: binned aggregate order flow `y`.
-- `residual`: the previous value and the binned `y - own x` (others + noise).
-
-Benchmarks (`theory.py`, exact under linear pricing):
-- **Nash**: symmetric Kyle equilibrium with `n = I + P` insiders: `beta = sigma_u / (sqrt(n) sigma_v)`.
-- **Collusive**: learners jointly act as one monopolist insider facing a rational
-  market maker: aggregate `B_L = sqrt(B_P^2 + sigma_u^2 / sigma_v^2)`.
-
-Outcomes are reported as a Calvano-style index `Delta = (m - m_Nash)/(m_coll - m_Nash)`
-(0 = competition, 1 = full collusion) for profit, aggregate trading intensity and
-price informativeness, plus diagnostics: `order_r2` (share of order variance
-explained by `v`) and `policy_change` (share of the greedy strategy that changed
-over the last 100k training steps; Calvano's convergence criterion in spirit).
-
-Model notes worth knowing:
-- With passive Nash traders, `I = P + 1` makes the collusive and Nash benchmarks
-  coincide exactly (no gain from colluding), so avoid that ratio. See `test_theory.py`.
-- Q-learning under-trades even alone, because noisy large-order payoffs get stuck
-  with unlucky low estimates. This is why the memoryless control is required.
-  See `test_q_learning_undertrades_under_reward_noise`.
-
-## Market-design interventions (config flags)
-
-`--sigma-u` noise volume · `--n-passive` non-learning informed traders ·
-`--tick` price grid · `--order-cap` position limit · `--disclosure-noise`
-noise on the flow traders observe (transparency) · `--mm-fixed` freeze lambda (ablation).
-
-## Running
+## Reproducing
 
 ```bash
-pip install -e ".[dev]"
-pytest                                   # 47 tests: theory, market mechanics, agents
-PYTHONPATH=src python -m kylecollusion.run --algo q --memory flow --sessions 200 \
-    --steps 6000000 --agent-kwargs '{"beta_decay": 1e-6}' --out results/q_flow.json
-PYTHONPATH=src python experiments/sweep.py experiments/grids/<grid>.json --workers 4
+pip install -e ".[dev]" matplotlib
+pytest                                       # 68 tests
+./experiments/run_all.sh                     # all sweeps; resumable after interruption
+PYTHONPATH=src python experiments/mechanism.py
+python paper/make_results.py                 # figures + numbers.tex
+cd paper && latexmk -pdf main.tex
 ```
 
-Sessions are simulated in parallel inside one process (numpy for Q-learning,
-batched per-agent networks for DQN/PPO), so everything runs on CPU.
-Rough cost on 4 cores, 200 sessions: Q-learning 1.5M steps ≈ 6 min.
-DQN and PPO are about 20x and 12x slower per step.
+Experiment specs are in `experiments/grids/*.json`; `experiments/exp4.sh`
+holds the perfect-monitoring runs. Everything runs on CPU: the simulator
+advances hundreds of independent markets per numpy step (Q-learning) or as
+batched per-agent networks (DQN, PPO).
 
-## Status and caveats
+## Layout
 
-- Built from the standard Kyle model. **Not yet checked against Dou, Goldstein &
-  Ji's exact specification** (their PDF was not reachable from this environment);
-  align value distribution, market-maker learning rule, state space and
-  hyperparameters with theirs before making comparisons.
-- Results so far are preliminary; see `results/NOTES.md`.
+```
+src/kylecollusion/
+  theory.py        benchmarks, deviation signal-to-noise
+  market.py        batched repeated Kyle market
+  agents/          tabular Q (constant/decaying step, taken/counterfactual updates), DQN, PPO
+  diagnostics.py   deviation test, noise-shock test, convergence statistics
+  metrics.py       collusion indices and per-session outcomes
+  run.py           train, evaluate, test; JSON output
+experiments/       sweep runner, grids, queue, mechanism experiment, tabulation
+results/           result JSON per run, NOTES.md
+paper/             LaTeX sources, figures, make_results.py
+tests/             theory, market, agents, diagnostics
+```
