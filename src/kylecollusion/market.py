@@ -91,6 +91,11 @@ class MarketConfig:
     n_price_bins: int = 15
     # Market maker re-estimates lambda_B with exponentially weighted moments.
     mm_halflife: float = 2000.0
+    # mm_window > 0: Dou et al.'s market maker instead, which re-estimates
+    # E[v|y] = g0 + g1 y by least squares over the last mm_window periods
+    # (equal weights) and prices p = g0 + lambda y, lambda = (theta g1 + xi) /
+    # (theta + xi^2). Their T_m = 10,000.
+    mm_window: int = 0
     mm_fixed: bool = False  # freeze lambda at the Nash value (ablation)
     extra: dict = field(default_factory=dict)
 
@@ -221,6 +226,18 @@ class KyleMarket:
             self.prev_rival_idx = np.zeros((self.S, self.I), dtype=np.int64)
             self.prev_price = np.zeros(self.S)
 
+    def _rolling_resum(self) -> None:
+        bv, by = self.buf_v, self.buf_y
+        self.mm_sums = np.stack([bv.sum(1), by.sum(1), (by * by).sum(1), (bv * by).sum(1)], 1)
+
+    def _rolling_moments(self) -> None:
+        """Least-squares E[v|y] over the window (Dou et al.'s market maker)."""
+        W = self.cfg.mm_window
+        self.m_v, self.m_y, self.m_yy, self.m_vy = (self.mm_sums / W).T.copy()
+        var_y = np.maximum(self.m_yy - self.m_y**2, 1e-8)
+        self.mm_g1 = (self.m_vy - self.m_v * self.m_y) / var_y
+        self.lam = self._price_impact(self.mm_g1)
+
     def counterfactual_profits(self) -> np.ndarray:
         """(S, I, n_actions) profit each trader would have made last period with
         each order on its grid, holding everyone else's orders and the noise
@@ -258,6 +275,17 @@ class KyleMarket:
         self.m_yy = np.full(S, var_y)
         self.m_vy = np.full(S, lam_b * var_y)
         self.lam = np.full(S, self._price_impact(lam_b))
+        self.mm_g1 = np.full(S, lam_b)
+        if self.cfg.mm_window:
+            # start the window full of synthetic Nash-play data, so the first
+            # estimates match the EWMA initialisation in distribution
+            W = self.cfg.mm_window
+            v0 = self.values[self.rng.integers(self.n_values, size=(S, W))]
+            y0 = total_n * v0 + self.rng.normal(0.0, self.cfg.sigma_u, size=(S, W))
+            self.buf_v, self.buf_y = v0, y0
+            self.buf_ptr = np.zeros(S, dtype=np.int64)
+            self._rolling_resum()
+            self._rolling_moments()
 
         self.v_idx = self.rng.integers(self.n_values, size=S)
         self.prev_v_idx = self.rng.integers(self.n_values, size=S)
@@ -355,12 +383,24 @@ class KyleMarket:
             "v": v, "y": y, "x": x, "lam": self.lam.copy(),
             "m_v": self.m_v.copy(), "m_y": self.m_y.copy(),
         }
-        p = self.m_v + self.lam * (y - self.m_y)
+        if cfg.mm_window:
+            p = self.m_v - self.mm_g1 * self.m_y + self.lam * y  # g0 + lambda y
+        else:
+            p = self.m_v + self.lam * (y - self.m_y)
         if cfg.tick > 0:
             p = np.round(p / cfg.tick) * cfg.tick
         profit = (v - p)[:, None] * x
 
-        if not cfg.mm_fixed:
+        if not cfg.mm_fixed and cfg.mm_window:
+            si, j = np.arange(self.S), self.buf_ptr
+            ov, oy = self.buf_v[si, j], self.buf_y[si, j]
+            self.mm_sums += np.stack([v - ov, y - oy, y * y - oy * oy, v * y - ov * oy], 1)
+            self.buf_v[si, j], self.buf_y[si, j] = v, y
+            self.buf_ptr = (j + 1) % cfg.mm_window
+            if self.buf_ptr[0] == 0:
+                self._rolling_resum()  # exact recomputation once per window
+            self._rolling_moments()
+        elif not cfg.mm_fixed:
             a = self._mm_decay
             self.m_v += a * (v - self.m_v)
             self.m_y += a * (y - self.m_y)

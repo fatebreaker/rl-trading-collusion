@@ -142,7 +142,8 @@ if nb is not None:
                values, grid_v, passive_beta, sigma_u, mm_fixed, mm_decay, xi, theta,
                mem, edges_flow, edges_resid, n_flow_bins, price_grid, p_lo, p_span, edges_unit,
                edges_price, expected_coef, sd_price, n_price_bins, dou_lo, dou_step,
-               by_value, vcount, stop_n, conv_count, done, conv_time):
+               by_value, vcount, stop_n, conv_count, done, conv_time,
+               W, buf_v, buf_y, buf_ptr, mm_sums, mm_g1):
         S = Q.shape[0]
         I = prev_resid.shape[1]
         A = grid_v.shape[1]
@@ -184,8 +185,42 @@ if nb is not None:
                 for i in range(I):
                     y += x[i]
                     tot_a += a[i]
-                p = m_v[s] + lam[s] * (y - m_y[s])
-                if not mm_fixed:
+                if W > 0:
+                    p = m_v[s] - mm_g1[s] * m_y[s] + lam[s] * y
+                else:
+                    p = m_v[s] + lam[s] * (y - m_y[s])
+                if not mm_fixed and W > 0:
+                    # Dou et al.: least squares over the last W periods
+                    j = buf_ptr[s]
+                    ov, oy = buf_v[s, j], buf_y[s, j]
+                    mm_sums[s, 0] += v - ov
+                    mm_sums[s, 1] += y - oy
+                    mm_sums[s, 2] += y * y - oy * oy
+                    mm_sums[s, 3] += v * y - ov * oy
+                    buf_v[s, j] = v
+                    buf_y[s, j] = y
+                    j += 1
+                    if j == W:
+                        j = 0
+                        s0, s1, s2, s3 = 0.0, 0.0, 0.0, 0.0
+                        for jj in range(W):
+                            s0 += buf_v[s, jj]
+                            s1 += buf_y[s, jj]
+                            s2 += buf_y[s, jj] * buf_y[s, jj]
+                            s3 += buf_v[s, jj] * buf_y[s, jj]
+                        mm_sums[s, 0], mm_sums[s, 1], mm_sums[s, 2], mm_sums[s, 3] = s0, s1, s2, s3
+                    buf_ptr[s] = j
+                    m_v[s] = mm_sums[s, 0] / W
+                    m_y[s] = mm_sums[s, 1] / W
+                    m_yy[s] = mm_sums[s, 2] / W
+                    m_vy[s] = mm_sums[s, 3] / W
+                    var_y = m_yy[s] - m_y[s] * m_y[s]
+                    if var_y < 1e-8:
+                        var_y = 1e-8
+                    g1 = (m_vy[s] - m_v[s] * m_y[s]) / var_y
+                    mm_g1[s] = g1
+                    lam[s] = g1 if xi == 0.0 else (theta * g1 + xi) / (theta + xi * xi)
+                elif not mm_fixed:
                     m_v[s] += mm_decay * (v - m_v[s])
                     m_y[s] += mm_decay * (y - m_y[s])
                     m_yy[s] += mm_decay * (y * y - m_yy[s])
@@ -263,6 +298,16 @@ def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
     price_grid = {"noise": 0, "grid": 1, "dou": 2}[getattr(cfg, "price_bins", "noise")]
     by_value = bool(getattr(agent, "explore_by_value", False))
     stop_n = int(getattr(agent, "stop_unchanged", 0) or 0)
+    W = int(getattr(cfg, "mm_window", 0) or 0)
+    if W:
+        for name in ("buf_v", "buf_y", "mm_sums", "mm_g1"):
+            setattr(env, name, np.ascontiguousarray(getattr(env, name), dtype=np.float64))
+        env.buf_ptr = np.ascontiguousarray(env.buf_ptr, dtype=np.int64)
+        buf_v, buf_y, buf_ptr, mm_sums, mm_g1 = env.buf_v, env.buf_y, env.buf_ptr, env.mm_sums, env.mm_g1
+    else:
+        buf_v = buf_y = mm_sums = np.zeros((1, 4))
+        buf_ptr = np.zeros(1, dtype=np.int64)
+        mm_g1 = np.zeros(1)
     if getattr(agent, "conv_count", None) is None:
         agent.conv_count = np.zeros(env.S, dtype=np.int64)
         agent.done = np.zeros(env.S, dtype=np.bool_)
@@ -289,5 +334,6 @@ def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
         float(expected_coef), float(env.sd_price), int(cfg.n_price_bins),
         float(getattr(env, "_dou_lo", 0.0)), float(getattr(env, "_dou_step", 1.0)),
         by_value, vcount, stop_n, agent.conv_count, agent.done, agent.conv_time,
+        W, buf_v, buf_y, buf_ptr, mm_sums, mm_g1,
     )
     env.u_shock = np.zeros(env.S)

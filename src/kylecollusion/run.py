@@ -168,6 +168,7 @@ def run(args) -> dict:
         n_flow_bins=args.n_flow_bins,
         mm_halflife=args.mm_halflife,
         mm_fixed=args.mm_fixed,
+        mm_window=args.mm_window,
     )
     env = KyleMarket(cfg, args.sessions, seed=args.seed)
     agent_kw = json.loads(args.agent_kwargs) if args.agent_kwargs else {}
@@ -274,6 +275,9 @@ def parse_args(argv=None):
     ap.add_argument("--checkpoint", type=str, default="",
                     help="pickle file for periodic training state; resumes from it if present")
     ap.add_argument("--checkpoint-every", type=int, default=500_000)
+    ap.add_argument("--mm-window", type=int, default=0,
+                    help="market maker re-estimates by least squares over this many past "
+                         "periods (Dou et al.: 10000); 0 = exponentially weighted moments")
     ap.add_argument("--engine", choices=("numpy", "numba"), default="numpy",
                     help="numba: compiled per-session training loop for tabular Q "
                          "(same model, different random draws)")

@@ -87,3 +87,19 @@ def test_stopping_rule_freezes_converged_sessions():
     q = ag.Q.copy()
     fast_train(env, ag, 60000, 70000)  # converged sessions no longer learn
     assert np.array_equal(q[ag.done], ag.Q[ag.done])
+
+
+def test_rolling_market_maker_matches_between_engines():
+    """Dou et al.'s rolling least-squares market maker: compiled engine keeps
+    exact window sums and the same lambda as a direct recomputation."""
+    cfg = dict(memory="price", price_bins="dou", grid_mode="bracket", n_values=10,
+               n_actions=15, n_price_bins=31, sigma_u=0.1, xi=500.0, mm_window=500)
+    env, ag = _setup(**cfg)
+    fast_train(env, ag, 0, 3000)  # crosses several window boundaries
+    bv, by = env.buf_v, env.buf_y
+    exact = np.stack([bv.sum(1), by.sum(1), (by * by).sum(1), (bv * by).sum(1)], 1)
+    assert np.allclose(env.mm_sums, exact, rtol=1e-9, atol=1e-6)
+    var_y = by.var(1)
+    g1 = ((bv * by).mean(1) - bv.mean(1) * by.mean(1)) / var_y
+    lam = (0.1 * g1 + 500.0) / (0.1 + 500.0**2)
+    assert np.allclose(env.lam, lam, rtol=1e-9)
