@@ -75,7 +75,8 @@ PYTHONPATH=src python experiments/bertrand_validation.py                   # Cal
 PYTHONPATH=src python experiments/bertrand_validation.py --market quotes    # dealers
 PYTHONPATH=src python experiments/sustain_curves.py                        # sustainability bounds
 python paper/make_results.py                 # figures + numbers.tex
-cd paper && latexmk -pdf main.tex
+cd paper && latexmk -pdf main.tex           # working paper
+cd paper && latexmk -pdf main_ec.tex        # EC submission (anonymous, 18-page body, EC'26 style)
 ```
 
 Experiment specs are in `experiments/grids/*.json`; `experiments/exp4.sh`
