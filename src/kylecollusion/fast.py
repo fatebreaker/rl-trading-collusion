@@ -87,6 +87,14 @@ if nb is not None:
         return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * math.pi * u2)
 
     @nb.njit(inline="always")
+    def _argmax_row(Q, s, tb, st, k, A):
+        best, bq = 0, Q[s, tb, st, k, 0]
+        for j in range(1, A):
+            if Q[s, tb, st, k, j] > bq:
+                best, bq = j, Q[s, tb, st, k, j]
+        return best
+
+    @nb.njit(inline="always")
     def _digitize(x, edges):
         # number of edges <= x  (np.digitize with increasing edges, right=False)
         lo, hi = 0, edges.shape[0]
@@ -134,7 +142,7 @@ if nb is not None:
                values, grid_v, passive_beta, sigma_u, mm_fixed, mm_decay, xi, theta,
                mem, edges_flow, edges_resid, n_flow_bins, price_grid, p_lo, p_span, edges_unit,
                edges_price, expected_coef, sd_price, n_price_bins, dou_lo, dou_step,
-               by_value, vcount):
+               by_value, vcount, stop_n, conv_count, done, conv_time):
         S = Q.shape[0]
         I = prev_resid.shape[1]
         A = grid_v.shape[1]
@@ -150,6 +158,8 @@ if nb is not None:
                                price_grid, p_lo, p_span, edges_unit, edges_price,
                                expected_coef, values, sd_price, n_price_bins, dou_lo, dou_step)
             for t in range(start, stop):
+                if done[s]:
+                    break
                 k = v_idx[s]
                 if by_value:
                     eps = math.exp(-beta_decay * vcount[s, k])
@@ -203,26 +213,40 @@ if nb is not None:
                                     prev_price, m_v, edges_flow, edges_resid, n_flow_bins, A,
                                     price_grid, p_lo, p_span, edges_unit, edges_price,
                                     expected_coef, values, sd_price, n_price_bins, dou_lo, dou_step)
+                changed = False
                 if shared:
                     # sequential: each trader's update sees the previous one's
                     for i in range(I):
+                        before = _argmax_row(Q, s, 0, st[i], k, A) if stop_n > 0 else 0
                         nxt = Q[s, 0, st2[i], k2, 0]
                         for j in range(1, A):
                             if Q[s, 0, st2[i], k2, j] > nxt:
                                 nxt = Q[s, 0, st2[i], k2, j]
                         r = (v - p) * x[i]
                         Q[s, 0, st[i], k, a[i]] += alpha * (r + gamma * nxt - Q[s, 0, st[i], k, a[i]])
+                        if stop_n > 0 and _argmax_row(Q, s, 0, st[i], k, A) != before:
+                            changed = True
                 else:
                     # simultaneous targets (tables are separate, so order is irrelevant)
                     for i in range(I):
+                        before = _argmax_row(Q, s, i, st[i], k, A) if stop_n > 0 else 0
                         nxt = Q[s, i, st2[i], k2, 0]
                         for j in range(1, A):
                             if Q[s, i, st2[i], k2, j] > nxt:
                                 nxt = Q[s, i, st2[i], k2, j]
                         r = (v - p) * x[i]
                         Q[s, i, st[i], k, a[i]] += alpha * (r + gamma * nxt - Q[s, i, st[i], k, a[i]])
+                        if stop_n > 0 and _argmax_row(Q, s, i, st[i], k, A) != before:
+                            changed = True
                 for i in range(I):
                     st[i] = st2[i]
+                if stop_n > 0:
+                    # Dou et al.'s criterion: greedy strategies unchanged for
+                    # stop_n consecutive periods; the session then stops learning
+                    conv_count[s] = 0 if changed else conv_count[s] + 1
+                    if conv_count[s] >= stop_n:
+                        done[s] = True
+                        conv_time[s] = t + 1
 
 
 def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
@@ -238,6 +262,11 @@ def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
         setattr(env, name, np.ascontiguousarray(getattr(env, name), dtype=np.float64))
     price_grid = {"noise": 0, "grid": 1, "dou": 2}[getattr(cfg, "price_bins", "noise")]
     by_value = bool(getattr(agent, "explore_by_value", False))
+    stop_n = int(getattr(agent, "stop_unchanged", 0) or 0)
+    if getattr(agent, "conv_count", None) is None:
+        agent.conv_count = np.zeros(env.S, dtype=np.int64)
+        agent.done = np.zeros(env.S, dtype=np.bool_)
+        agent.conv_time = np.zeros(env.S, dtype=np.int64)
     vcount = agent.vcount if by_value else np.zeros((1, 1), dtype=np.int64)
     expected_coef = b.lam_nash * (b.agg_nash + env.passive_beta)
     _train(
@@ -259,6 +288,6 @@ def fast_train(env, agent, start: int, stop: int, seed: int = 0) -> None:
         np.ascontiguousarray(env._edges_price, dtype=np.float64),
         float(expected_coef), float(env.sd_price), int(cfg.n_price_bins),
         float(getattr(env, "_dou_lo", 0.0)), float(getattr(env, "_dou_step", 1.0)),
-        by_value, vcount,
+        by_value, vcount, stop_n, agent.conv_count, agent.done, agent.conv_time,
     )
     env.u_shock = np.zeros(env.S)

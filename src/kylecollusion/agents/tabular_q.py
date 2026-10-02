@@ -48,6 +48,7 @@ class TabularQ:
         update: str = "taken",
         shared: bool = False,
         explore_by_value: bool = False,
+        stop_unchanged: int = 0,
         seed: int = 0,
     ):
         if shared and update != "taken":
@@ -71,6 +72,11 @@ class TabularQ:
         # Dou et al. (2025): epsilon depends on how often the current value has
         # been visited, eps = exp(-beta * t(v)), instead of on calendar time.
         self.explore_by_value = explore_by_value
+        # Dou et al.'s stopping rule (compiled engine only): a session stops
+        # learning once its greedy strategies are unchanged for this many
+        # consecutive periods. 0 = train for the full horizon.
+        self.stop_unchanged = stop_unchanged
+        self.conv_count = self.done = self.conv_time = None
         self.vcount = np.zeros((env.S, env.n_values), dtype=np.int64) if explore_by_value else None
         self.rng = np.random.default_rng(seed)
 

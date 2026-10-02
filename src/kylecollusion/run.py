@@ -221,6 +221,11 @@ def run(args) -> dict:
     }
     if hasattr(agent, "epsilon"):
         result["final_epsilon"] = agent.epsilon(args.steps)
+    if getattr(agent, "stop_unchanged", 0) and getattr(agent, "done", None) is not None:
+        # Dou et al.'s stopping rule: share of sessions that met it, and when
+        result["converged_share"] = float(agent.done.mean())
+        ct = agent.conv_time[agent.done]
+        result["converged_periods_quantiles"] = np.quantile(ct, [0, 0.25, 0.5, 0.75, 1]).tolist() if len(ct) else []
     if impulse is not None:
         result["impulse"] = impulse
     if shocks:

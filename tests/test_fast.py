@@ -76,3 +76,14 @@ def test_value_exploration_same_distribution():
         ag = TabularQ(env, alpha=0.1, gamma=0.0, beta_decay=2.5e-4, explore_by_value=True, seed=1)
         out.append(_mean_order_intensity(env, ag, 60000, engine))
     assert abs(out[0] - out[1]) < 0.04 * abs(out[0])
+
+
+def test_stopping_rule_freezes_converged_sessions():
+    env, _ = _setup(memory="none", n_informed=1, mm_fixed=True)
+    ag = TabularQ(env, alpha=0.1, gamma=0.0, beta_decay=1e-3, stop_unchanged=2000, seed=1)
+    fast_train(env, ag, 0, 60000)
+    assert ag.done.any()
+    assert (ag.conv_time[ag.done] >= 2000).all() and (ag.conv_time[ag.done] <= 60000).all()
+    q = ag.Q.copy()
+    fast_train(env, ag, 60000, 70000)  # converged sessions no longer learn
+    assert np.array_equal(q[ag.done], ag.Q[ag.done])
