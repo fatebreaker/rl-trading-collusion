@@ -42,3 +42,41 @@ def test_group_advantages():
     a = group_advantages(p, 0.5, G)
     assert a[0, 0, 0] > 0 and a[0, 0, 0] < a[2, 0, 0]
     assert np.allclose(a[:, :, 1], 0.0)
+
+
+class FakePolicy:
+    """Stands in for PolicyBackend: order = mult x V, with fake token ids."""
+
+    def __init__(self, mult):
+        import re
+        self.mult, self.re, self.records = mult, re, None
+
+    def generate(self, convs, seeds, temperature, max_tokens):
+        texts = []
+        for c in convs:
+            v = float(self.re.search(r"V = ([-+]\d+\.\d+)", c[-1]["content"]).group(1))
+            texts.append('{"order": %.4f}' % (self.mult * v))
+        if self.records is not None:
+            self.records.append([([1, 2, 3], [4, 5]) for _ in convs])
+        return texts
+
+
+def _trigger_cfg(**kw):
+    from kylecollusion.grpo import GRPOConfig
+    return GRPOConfig(rival="trigger", groups=2, group_size=3, periods=12, **kw)
+
+
+def test_trigger_rival_punishes_deviations_only():
+    from kylecollusion.grpo import rollout
+    cfg = _trigger_cfg()
+    s_dev, st_dev = rollout(FakePolicy(0.8), cfg, seed=3)
+    assert st_dev["punished_share"] > 0.3
+    assert len(s_dev) == cfg.periods * cfg.groups * cfg.group_size  # policy trader only
+    coop = st_dev["coop"]
+    _, st_coop = rollout(FakePolicy(coop), cfg, seed=3)
+    assert st_coop["punished_share"] == 0.0
+    assert st_coop["policy_intensity"] == pytest.approx(coop, rel=1e-2)
+    # cooperating beats deviating once punishment is counted
+    assert st_coop["policy_profit"] > st_dev["policy_profit"]
+    # the one-shot best response to cooperation is to trade more
+    assert st_dev["policy_br_to_coop"] > coop

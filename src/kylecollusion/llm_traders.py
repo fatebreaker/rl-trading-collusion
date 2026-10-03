@@ -194,9 +194,12 @@ class LLMTraders:
     Holds no model, so a market and its traders can be cloned with
     copy.deepcopy for paired experiments."""
 
-    def __init__(self, env: KyleMarket, cfg: LLMTraderConfig, seed: int = 0):
+    def __init__(self, env: KyleMarket, cfg: LLMTraderConfig, seed: int = 0,
+                 active: list[int] | None = None):
         self.cfg = cfg
         self.S, self.I = env.S, env.I
+        # traders played by the model; the caller fills the others' orders
+        self.active = list(range(env.I)) if active is None else list(active)
         self.values = env.values
         self.seed = seed
         self.system = system_prompt(env.values, env.I, cfg)
@@ -252,7 +255,7 @@ class LLMTraders:
         return [
             [{"role": "system", "content": self.system},
              {"role": "user", "content": self.user_prompt(s, i, float(v[s]))}]
-            for s in range(self.S) for i in range(self.I)
+            for s in range(self.S) for i in self.active
         ]
 
     def act(self, env: KyleMarket, backend) -> np.ndarray:
@@ -260,13 +263,14 @@ class LLMTraders:
         return act_many([(env, self)], backend)[0]
 
     def requests(self, env: KyleMarket) -> tuple[list[list[dict]], list[int]]:
-        seeds = [self.request_seed(s, i) for s in range(self.S) for i in range(self.I)]
+        seeds = [self.request_seed(s, i) for s in range(self.S) for i in self.active]
         return self.conversations(env), seeds
 
     def apply(self, texts: list[str]) -> np.ndarray:
         x = np.zeros((self.S, self.I))
         for k, text in enumerate(texts):
-            s, i = divmod(k, self.I)
+            s, j = divmod(k, len(self.active))
+            i = self.active[j]
             order, notes = parse_response(text)
             self.n_calls += 1
             self.last_text[s][i] = text

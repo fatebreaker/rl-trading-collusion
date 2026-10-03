@@ -27,8 +27,13 @@ def grpo_lines():
         d = rows[-1]
         bucket = d["iteration"] // 25 * 25  # report every 25 iterations
         b = sum(r["agg_intensity"] for r in rows[-5:]) / len(rows[-5:])
-        out[f"grpo/{run}"] = (bucket, f"grpo/{run}: it {d['iteration']} beta(last5) {b:.3f} "
-                                      f"x Nash {d['intensity_over_nash']:.2f} zero-adv {d.get('zero_adv_share', float('nan')):.2f}")
+        line = (f"grpo/{run}: it {d['iteration']} beta(last5) {b:.3f} "
+                f"x Nash {d['intensity_over_nash']:.2f} zero-adv {d.get('zero_adv_share', float('nan')):.2f}")
+        if "policy_intensity" in d:  # scripted trigger rival
+            pb = sum(r["policy_intensity"] for r in rows[-5:]) / len(rows[-5:])
+            ps = sum(r["punished_share"] for r in rows[-5:]) / len(rows[-5:])
+            line += f" | policy {pb:.3f} (coop {d['coop']:.2f}, BR {d['policy_br_to_coop']:.2f}) punished {ps:.2f}"
+        out[f"grpo/{run}"] = (bucket, line)
     return out
 
 

@@ -64,6 +64,16 @@ class GRPOConfig:
     vllm_dtype: str = "auto"
     attention_backend: str | None = None
     seed: int = 0
+    # rival: "self" (self-play, both traders are the policy) or "trigger": the
+    # policy plays trader 0 against a scripted rival who orders coop x V, and
+    # punish x V for punish_len periods after the policy's order exceeds
+    # coop x |V| + tol (perfect monitoring). coop/punish default to the
+    # frozen-lambda joint optimum per trader and twice the Nash intensity.
+    rival: str = "self"
+    coop: float = 0.0
+    punish: float = 0.0
+    punish_len: int = 3
+    tol: float = 0.3
 
 
 class GroupRNG:
@@ -129,31 +139,48 @@ def rollout(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     env = KyleMarket(mcfg, S, seed=seed)
     env.rng = GroupRNG(env.rng, cfg.group_size)
     env.reset()
-    tcfg = LLMTraderConfig(history=cfg.history, notes=cfg.notes,
+    trigger = cfg.rival == "trigger"
+    if trigger and env.I != 2:
+        raise ValueError("the trigger rival needs n_informed = 2")
+    fb = fixed_lambda_benchmarks(env.I, env.bench.lam_nash, mcfg.sigma_v)
+    tcfg = LLMTraderConfig(history=cfg.history, notes=cfg.notes, show_rival=trigger,
                            temperature=cfg.temperature, max_tokens=cfg.max_tokens)
-    traders = LLMTraders(env, tcfg, seed=seed)
+    active = [0] if trigger else None
+    traders = LLMTraders(env, tcfg, seed=seed, active=active)
+    coop = cfg.coop or fb["beta_coll"]
+    punish = cfg.punish or 2.0 * fb["beta_nash"]
     T, I = cfg.periods, env.I
     profit = np.zeros((T, S, I))
     x_all = np.zeros((T, S, I))
     v_all = np.zeros((T, S))
+    punishing = np.zeros((T, S), dtype=bool)
+    left = np.zeros(S, dtype=np.int64)
     backend.records = []
     for t in range(T):
         x = traders.act(env, backend)
+        if trigger:
+            v = env.values[env.v_idx]
+            punishing[t] = left > 0
+            x[:, 1] = np.where(punishing[t], punish, coop) * v
         pi, _, info = env.step_orders(x)
         traders.record(info, pi)
         profit[t], x_all[t], v_all[t] = pi, x, info["v"]
+        if trigger:
+            v = info["v"]
+            broke = (np.abs(x[:, 0]) > coop * np.abs(v) + cfg.tol) & (np.abs(v) > 0)
+            left = np.where(broke, cfg.punish_len, np.maximum(left - 1, 0))
     records = backend.records
     backend.records = None
 
     adv = group_advantages(profit, cfg.gamma, cfg.group_size)
+    act = traders.active
     samples = []
     for t in range(T):
         for k, (p_ids, o_ids) in enumerate(records[t]):
-            s, i = divmod(k, I)
+            s, j = divmod(k, len(act))
             if o_ids:
-                samples.append((p_ids, o_ids, float(adv[t, s, i])))
+                samples.append((p_ids, o_ids, float(adv[t, s, act[j]])))
 
-    fb = fixed_lambda_benchmarks(I, env.bench.lam_nash, mcfg.sigma_v)
     agg = x_all.sum(-1)
     beta = float((agg * v_all).sum() / (v_all**2).sum())
     stats = {
@@ -167,6 +194,11 @@ def rollout(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         "parse_fail": traders.n_fail / max(traders.n_calls, 1),
         "resp_tokens": float(np.mean([len(o) for _, o, _ in samples])) if samples else 0.0,
     }
+    if trigger:  # the policy's own intensity, profit, and how often it is punished
+        b0 = float((x_all[:, :, 0] * v_all).sum() / (v_all**2).sum())
+        stats.update(policy_intensity=b0, coop=coop, policy_br_to_coop=(1 - fb["lam"] * coop)
+                     / (2 * fb["lam"]), punished_share=float(punishing.mean()),
+                     policy_profit=float(profit[:, :, 0].mean()))
     return samples, stats
 
 
