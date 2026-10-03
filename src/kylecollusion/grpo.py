@@ -70,6 +70,7 @@ class GRPOConfig:
     # coop x |V| + tol (perfect monitoring). coop/punish default to the
     # frozen-lambda joint optimum per trader and twice the Nash intensity.
     rival: str = "self"
+    monitor: bool = False  # show the rival's past orders in the prompt (self-play)
     coop: float = 0.0
     punish: float = 0.0
     punish_len: int = 3
@@ -143,7 +144,8 @@ def rollout(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     if trigger and env.I != 2:
         raise ValueError("the trigger rival needs n_informed = 2")
     fb = fixed_lambda_benchmarks(env.I, env.bench.lam_nash, mcfg.sigma_v)
-    tcfg = LLMTraderConfig(history=cfg.history, notes=cfg.notes, show_rival=trigger,
+    tcfg = LLMTraderConfig(history=cfg.history, notes=cfg.notes,
+                           show_rival=trigger or cfg.monitor,
                            temperature=cfg.temperature, max_tokens=cfg.max_tokens)
     active = [0] if trigger else None
     traders = LLMTraders(env, tcfg, seed=seed, active=active)
