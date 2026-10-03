@@ -37,6 +37,7 @@ def pilot_lines():
     for log in sorted(glob.glob(os.path.join(ROOT, "llm_pilot", "*.log"))
                       + glob.glob(os.path.join(ROOT, "grpo_audit", "*.log"))
                       + glob.glob(os.path.join(ROOT, "llm_base", "*.log"))
+                      + glob.glob(os.path.join(ROOT, "llm_api", "*.log"))
                       + glob.glob(os.path.join(ROOT, "grpo", "*.log"))):
         run = os.path.relpath(log, ROOT)[:-4]
         text = open(log, errors="ignore").read()

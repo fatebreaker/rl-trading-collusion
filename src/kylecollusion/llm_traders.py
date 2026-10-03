@@ -448,20 +448,72 @@ class VLLMBackend:
         return [o.outputs[0].text for o in outs]
 
 
+# USD per million tokens: (input, cached input, output). Reasoning tokens bill as output.
+OPENAI_PRICES = {
+    "gpt-5.4-nano": (0.20, 0.02, 1.25),
+    "gpt-5.4-mini": (0.75, 0.075, 4.50),
+}
+
+
+class BudgetExceeded(RuntimeError):
+    pass
+
+
 @dataclass
 class OpenAIBackend:
-    """Hosted models. Reads OPENAI_API_KEY from the environment. Reasoning
-    models ignore temperature, and seeds are best effort on the API side."""
+    """Hosted models. Reads OPENAI_API_KEY from the environment.
+
+    Spending is tracked from the token usage the API reports and appended to a
+    ledger shared by all runs; a batch is refused if the run's spend would pass
+    `run_budget` or the ledger's total would pass `total_budget` (checked
+    before each batch, with a worst-case estimate for the batch). Reasoning
+    models ignore temperature; seeds are best effort on the API side."""
 
     model: str
     concurrency: int = 32
     reasoning_effort: str | None = None
-    usage: dict = field(default_factory=lambda: {"input": 0, "output": 0})
+    max_completion_tokens: int = 4000
+    run_budget: float = 10.0
+    total_budget: float = 50.0
+    ledger: str = "results/openai_spend.jsonl"
+    tag: str = ""
+    usage: dict = field(default_factory=lambda: {"input": 0, "cached": 0, "output": 0,
+                                                 "calls": 0, "failed": 0, "cost": 0.0})
+
+    def __post_init__(self):
+        if self.model not in OPENAI_PRICES:
+            raise ValueError(f"no price for {self.model}; add it to OPENAI_PRICES")
+
+    def _cost(self, inp, cached, out):
+        pi, pc, po = OPENAI_PRICES[self.model]
+        return ((inp - cached) * pi + cached * pc + out * po) / 1e6
+
+    def ledger_total(self) -> float:
+        import os
+
+        if not os.path.exists(self.ledger):
+            return 0.0
+        return sum(json.loads(l)["cost"] for l in open(self.ledger) if l.strip())
 
     def generate(self, convs, seeds, temperature, max_tokens):
         import asyncio
 
-        return asyncio.run(self._generate(convs, seeds, temperature, max_tokens))
+        # worst case for this batch: every call uses its full completion budget
+        n_in = sum(len(json.dumps(c)) for c in convs) / 3.5  # rough token estimate
+        worst = self._cost(n_in, 0, len(convs) * self.max_completion_tokens)
+        if self.usage["cost"] + worst > self.run_budget:
+            raise BudgetExceeded(f"run budget {self.run_budget} would be exceeded")
+        if self.ledger_total() + worst > self.total_budget:
+            raise BudgetExceeded(f"total budget {self.total_budget} would be exceeded")
+        before = dict(self.usage)
+        texts = asyncio.run(self._generate(convs, seeds, temperature, max_tokens))
+        spent = self.usage["cost"] - before["cost"]
+        with open(self.ledger, "a") as fh:
+            fh.write(json.dumps({"model": self.model, "tag": self.tag, "calls": len(convs),
+                                 "input": self.usage["input"] - before["input"],
+                                 "output": self.usage["output"] - before["output"],
+                                 "cost": spent}) + "\n")
+        return texts
 
     async def _generate(self, convs, seeds, temperature, max_tokens):
         import asyncio
@@ -472,12 +524,12 @@ class OpenAIBackend:
         sem = asyncio.Semaphore(self.concurrency)
 
         async def one(conv, seed):
-            kw = {"model": self.model, "messages": conv, "seed": seed}
+            kw = {"model": self.model, "messages": conv, "seed": seed,
+                  "max_completion_tokens": self.max_completion_tokens}
             if self.reasoning_effort:
                 kw["reasoning_effort"] = self.reasoning_effort
             else:
                 kw["temperature"] = temperature
-                kw["max_completion_tokens"] = max_tokens
             async with sem:
                 for attempt in range(6):
                     try:
@@ -485,10 +537,16 @@ class OpenAIBackend:
                         break
                     except Exception:  # rate limits and transient errors
                         if attempt == 5:
+                            self.usage["failed"] += 1
                             return ""
                         await asyncio.sleep(2 ** attempt)
-            self.usage["input"] += r.usage.prompt_tokens
-            self.usage["output"] += r.usage.completion_tokens
+            u = r.usage
+            cached = getattr(getattr(u, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+            self.usage["input"] += u.prompt_tokens
+            self.usage["cached"] += cached
+            self.usage["output"] += u.completion_tokens
+            self.usage["calls"] += 1
+            self.usage["cost"] += self._cost(u.prompt_tokens, cached, u.completion_tokens)
             return r.choices[0].message.content or ""
 
         try:

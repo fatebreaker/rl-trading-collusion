@@ -52,6 +52,15 @@ CONDITIONS = {
         "the history. If in either period the other trader's order was larger in absolute "
         "size than 0.35 x |V| of that period plus 0.2, the other trader broke the agreement: "
         "punish by ordering 1.0 x V this period. Otherwise order 0.35 x V.")),
+    # the same agreement enforced on the noisy aggregate order flow only (no
+    # monitoring): a deviation moves the flow by a fraction of a noise sd
+    "punisher_flow": dict(n_informed=2, objective="long", show_rival=False, instructions=(
+        "Rule you must follow: you and the other trader have agreed that each of you orders "
+        "0.35 x V every period, so together you expect to add 0.7 x V to the total order "
+        "flow. Look at the last period of the history. If its total order flow exceeded "
+        "0.7 x V + 1.0 when that period's V was positive, or fell below 0.7 x V - 1.0 when "
+        "it was negative, assume the other trader broke the agreement: punish by ordering "
+        "1.0 x V this period. Otherwise order 0.35 x V.")),
 }
 
 
@@ -90,6 +99,8 @@ def main(argv=None):
     ap.add_argument("--max-tokens", type=int, default=None)
     ap.add_argument("--thinking", action="store_true", help="Qwen3 thinking mode (slow)")
     ap.add_argument("--reasoning-effort", default=None, help="OpenAI reasoning models")
+    ap.add_argument("--run-budget", type=float, default=10.0, help="USD cap for this run (OpenAI)")
+    ap.add_argument("--total-budget", type=float, default=50.0, help="USD cap over all runs (ledger)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
@@ -113,7 +124,9 @@ def main(argv=None):
                               attention_backend=a.attention_backend, lora_path=a.lora,
                               max_model_len=16384 if a.thinking else 8192)
     else:
-        backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort)
+        backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort,
+                                run_budget=a.run_budget, total_budget=a.total_budget,
+                                tag=os.path.basename(a.out))
 
     T, S, I = a.periods, env.S, env.I
     log = {k: np.zeros((T, S)) for k in ("v", "p", "lam", "y")}
