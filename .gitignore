@@ -10,3 +10,7 @@ venv/
 checkpoints/
 results/**/*.log
 results/*.log
+logs/
+results/.status_state.json
+results/grpo/*/adapter_*
+results/**/*.log.old
