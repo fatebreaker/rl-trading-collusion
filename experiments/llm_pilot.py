@@ -29,7 +29,7 @@ from dataclasses import asdict
 import numpy as np
 
 from kylecollusion.llm_traders import (
-    LLMTraderConfig, LLMTraders, OpenAIBackend, VLLMBackend, deviation_test,
+    BudgetExceeded, LLMTraderConfig, LLMTraders, OpenAIBackend, VLLMBackend, deviation_test,
     fixed_lambda_benchmarks,
 )
 from kylecollusion.market import KyleMarket, MarketConfig
@@ -195,21 +195,27 @@ def main(argv=None):
                                  "model": a.model, "args": vars(a)}) + "\n")
             for t_, s_, i_, seed_, text_ in raw:
                 fh.write(json.dumps({"t": t_, "s": s_, "i": i_, "seed": seed_, "text": text_}) + "\n")
+    def save():
+        os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+        if isinstance(backend, OpenAIBackend):
+            res["usage"] = backend.usage
+        with open(a.out, "w") as fh:
+            json.dump(res, fh, indent=1)
+
+    save()  # the main run is kept even if a deviation test is interrupted
     if I > 1 and a.dev_events > 0:
         t1 = time.time()
-        res["deviation"] = deviation_test(env, traders, backend, events=a.dev_events,
-                                          gap=a.dev_gap, horizon=a.dev_horizon)
-        if a.dev_shift > 0:
-            res["deviation_shift"] = deviation_test(
-                env, traders, backend, events=a.dev_events, gap=a.dev_gap,
-                horizon=a.dev_horizon, mode="shift", scale=a.dev_shift)
+        try:
+            res["deviation"] = deviation_test(env, traders, backend, events=a.dev_events,
+                                              gap=a.dev_gap, horizon=a.dev_horizon)
+            if a.dev_shift > 0:
+                res["deviation_shift"] = deviation_test(
+                    env, traders, backend, events=a.dev_events, gap=a.dev_gap,
+                    horizon=a.dev_horizon, mode="shift", scale=a.dev_shift)
+        except BudgetExceeded as e:
+            res["deviation_error"] = str(e)
         res["deviation_seconds"] = time.time() - t1
-    if isinstance(backend, OpenAIBackend):
-        res["usage"] = backend.usage
-
-    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
-    with open(a.out, "w") as fh:
-        json.dump(res, fh, indent=1)
+    save()
     sm = res["summary"]
     print(json.dumps({k: sm[k]["mean"] for k in ("agg_intensity", "delta_intensity", "delta_intensity_fixed",
                                                  "delta_profit_fixed", "intensity_over_nash_fixed")}))
