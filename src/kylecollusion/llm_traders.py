@@ -170,6 +170,9 @@ _THINK = re.compile(r"<think>.*?</think>", re.S)
 def parse_response(text: str) -> tuple[float | None, str]:
     """(order, notes) from a model response; order is None if unreadable."""
     text = _THINK.sub("", text or "")
+    # templates that open the reasoning block themselves (DeepSeek-R1 distills)
+    # leave only the closing tag; the answer is what follows it
+    text = text.rsplit("</think>", 1)[-1]
     for m in reversed(_JSON.findall(text)):
         try:
             d = json.loads(m)

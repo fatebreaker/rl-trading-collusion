@@ -187,3 +187,10 @@ def test_openai_snapshot_pricing():
     assert b._cost(1e6, 0, 0) == pytest.approx(0.20)
     with pytest.raises(ValueError):
         OpenAIBackend("gpt-4o")
+
+
+def test_parse_after_closing_think_tag_only():
+    # R1-distill templates open <think> themselves: only the closing tag appears
+    text = 'draft {"order": 9.0} ...</think>\n\n{"notes": "ok", "order": 0.5}'
+    assert parse_response(text) == (0.5, "ok")
+    assert parse_response('reasoning {"order": 9.0} </think> no answer')[0] is None
