@@ -9,8 +9,9 @@ learning traders (tabular Q-learning, language models trading in context, and
 language models trained by reinforcement learning), runs the audit (paired
 deviation tests, placebos, depth sweep, positive controls), and builds every
 table and figure of `paper/main_v2.tex`. All results are simulated; no external
-data are used. Running everything from scratch takes on the order of 2,000
-GPU-hours and a few hundred CPU-hours; every intermediate result is included
+data are used. Running everything from scratch takes a few hundred
+GPU-hours (8 GPUs for about two days here) plus CPU time for the Q-learning
+sweeps; every intermediate result is included
 under `results/`, so tables and figures can be rebuilt in minutes.
 
 ## Data availability
