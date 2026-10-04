@@ -43,6 +43,7 @@ def pilot_lines():
                       + glob.glob(os.path.join(ROOT, "grpo_audit", "*.log"))
                       + glob.glob(os.path.join(ROOT, "llm_base", "*.log"))
                       + glob.glob(os.path.join(ROOT, "llm_api", "*.log"))
+                      + glob.glob(os.path.join(ROOT, "llm_models", "*.log"))
                       + glob.glob(os.path.join(ROOT, "grpo", "*.log"))):
         run = os.path.relpath(log, ROOT)[:-4]
         text = open(log, errors="ignore").read()

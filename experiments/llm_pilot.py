@@ -102,6 +102,7 @@ def main(argv=None):
     ap.add_argument("--attention-backend", default=None, help="'triton_attn' on RTX 6000")
     ap.add_argument("--lora", default=None, help="trained LoRA adapter directory")
     ap.add_argument("--max-tokens", type=int, default=None)
+    ap.add_argument("--max-model-len", type=int, default=None, help="vLLM context (default 8192; 16384 with thinking)")
     ap.add_argument("--thinking", action="store_true", help="Qwen3 thinking mode (slow)")
     ap.add_argument("--reasoning-effort", default=None, help="OpenAI reasoning models")
     ap.add_argument("--run-budget", type=float, default=10.0, help="USD cap for this run (OpenAI)")
@@ -129,7 +130,7 @@ def main(argv=None):
         backend = VLLMBackend(a.model, gpu_memory_utilization=a.gpu_mem,
                               enable_thinking=a.thinking, dtype=a.dtype,
                               attention_backend=a.attention_backend, lora_path=a.lora,
-                              max_model_len=16384 if a.thinking else 8192)
+                              max_model_len=a.max_model_len or (16384 if a.thinking else 8192))
     else:
         backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort,
                                 run_budget=a.run_budget, total_budget=a.total_budget,
