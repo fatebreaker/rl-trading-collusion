@@ -1,13 +1,30 @@
-# Punishment or Pruning? Diagnosing algorithmic collusion among RL traders
+# Do AI Traders Collude? Diagnosing algorithmic collusion from Q-learning to language models
 
 Code, experiments and paper for a study of whether reinforcement-learning
 informed traders in a repeated Kyle (1985) market collude (sustain low trading
 with the threat of punishment) or merely under-trade because of a learning
 bias ("over-pruning").
 
-- **Paper:** `paper/main.pdf` (sources in `paper/`, figures and numbers built
-  from the result files by `paper/make_results.py`)
-- **Experiment log:** `results/NOTES.md`
+- **Paper:** `paper/main_v2.tex` (current: Q-learning, in-context and
+  reasoning language models, RL-trained language models); `paper/main.tex` and
+  `paper/main_ec.tex` are the earlier Q-learning-only versions. Figures and
+  numbers are built from the result files by `paper/make_results.py`,
+  `paper/make_llm_figures.py` and `paper/make_llm_tables.py`.
+- **Experiment logs:** `results/NOTES.md` (Q-learning), `results/LLM_NOTES.md`
+  (language models), plan in `results/PAPER_PLAN.md`
+
+## Language-model traders
+
+- `src/kylecollusion/llm_traders.py`: in-context traders (neutral prompts,
+  paraphrase, framing and monitoring conditions; vLLM, OpenAI and scripted
+  backends with spend caps) and the paired deviation test with shared
+  sampling seeds.
+- `src/kylecollusion/grpo.py`: GRPO self-play with LoRA (common random numbers
+  within groups, discounted return-to-go, gamma = 0 as myopic control) and a
+  scripted trigger rival as a positive control.
+- Runners: `experiments/llm_pilot.py` (one condition), `experiments/grpo_train.py`,
+  `experiments/grpo_audit.sh`, `experiments/llm_*.sh`; `experiments/status.py`
+  for monitoring; `experiments/llm_tabulate.py` for quick tables.
 
 ## Main ideas
 
