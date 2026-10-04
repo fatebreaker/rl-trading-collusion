@@ -169,3 +169,21 @@ def test_instructions_only_when_given():
     assert system_prompt(vals, 2, LLMTraderConfig()).endswith("<number>}")
     p = system_prompt(vals, 2, LLMTraderConfig(instructions="Rule: X."))
     assert p.endswith("\n\nRule: X.")
+
+
+def test_raw_capture_and_triopoly_prompt():
+    env = _market(I=3, S=4)
+    tr = LLMTraders(env, LLMTraderConfig(history=3), seed=0)
+    assert "2 other traders also learn V" in tr.system
+    tr.raw = []
+    x = tr.act(env, scripted(0.5))
+    assert len(tr.raw) == 4 * 3 and tr.raw[0][0] == 0
+    assert x.shape == (4, 3)
+
+
+def test_openai_snapshot_pricing():
+    from kylecollusion.llm_traders import OpenAIBackend
+    b = OpenAIBackend("gpt-5.4-nano-2026-03-17")
+    assert b._cost(1e6, 0, 0) == pytest.approx(0.20)
+    with pytest.raises(ValueError):
+        OpenAIBackend("gpt-4o")

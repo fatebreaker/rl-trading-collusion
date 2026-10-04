@@ -41,6 +41,7 @@ CONDITIONS = {
     "monitor": dict(n_informed=2, objective="long", show_rival=True),
     "myopic": dict(n_informed=2, objective="myopic", show_rival=False),
     "solo": dict(n_informed=1, objective="long", show_rival=False),
+    "triopoly": dict(n_informed=3, objective="long", show_rival=False),
     # framing x presence: identical prompt, with and without a real rival
     "duopoly_vague": dict(n_informed=2, objective="long", show_rival=False, rival_info="vague"),
     "solo_vague": dict(n_informed=1, objective="long", show_rival=False, rival_info="vague"),
@@ -84,6 +85,10 @@ def main(argv=None):
     ap.add_argument("--burn", type=float, default=0.5, help="share of periods dropped before scoring")
     ap.add_argument("--history", type=int, default=30)
     ap.add_argument("--sigma-u", type=float, default=1.0, help="noise-trading sd (sigma_v = 1)")
+    ap.add_argument("--adaptive-mm", action="store_true",
+                    help="market maker re-estimates lambda (EWMA) instead of freezing it at Nash")
+    ap.add_argument("--mm-halflife", type=float, default=50.0, help="EWMA half-life (adaptive MM)")
+    ap.add_argument("--save-raw", action="store_true", help="save every response (jsonl.gz)")
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--no-notes", action="store_true")
     ap.add_argument("--prompt-variant", choices=["a", "b"], default="a")
@@ -106,8 +111,8 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     cond = CONDITIONS[a.condition]
-    mcfg = MarketConfig(n_informed=cond["n_informed"], mm_fixed=True, memory="flow",
-                        sigma_u=a.sigma_u)
+    mcfg = MarketConfig(n_informed=cond["n_informed"], mm_fixed=not a.adaptive_mm, memory="flow",
+                        sigma_u=a.sigma_u, mm_halflife=a.mm_halflife)
     env = KyleMarket(mcfg, a.sessions, seed=a.seed)
     env.reset()
     tcfg = LLMTraderConfig(history=a.history, objective=cond["objective"],
@@ -118,6 +123,8 @@ def main(argv=None):
                            temperature=a.temperature,
                            max_tokens=a.max_tokens or (4096 if a.thinking else 300))
     traders = LLMTraders(env, tcfg, seed=a.seed)
+    if a.save_raw:
+        traders.raw = []
     if a.backend == "vllm":
         backend = VLLMBackend(a.model, gpu_memory_utilization=a.gpu_mem,
                               enable_thinking=a.thinking, dtype=a.dtype,
@@ -177,6 +184,17 @@ def main(argv=None):
         # raw paths for session-level statistics: (T, S[, I])
         "log": {k: np.round(log[k], 5).tolist() for k in ("v", "p", "x")},
     }
+    raw = traders.raw
+    traders.raw = None  # the raw file holds the main run only
+    if raw is not None:
+        import gzip
+
+        os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+        with gzip.open(a.out[:-5] + "_raw.jsonl.gz", "wt") as fh:
+            fh.write(json.dumps({"system_prompt": traders.system, "condition": a.condition,
+                                 "model": a.model, "args": vars(a)}) + "\n")
+            for t_, s_, i_, seed_, text_ in raw:
+                fh.write(json.dumps({"t": t_, "s": s_, "i": i_, "seed": seed_, "text": text_}) + "\n")
     if I > 1 and a.dev_events > 0:
         t1 = time.time()
         res["deviation"] = deviation_test(env, traders, backend, events=a.dev_events,
@@ -193,7 +211,7 @@ def main(argv=None):
     with open(a.out, "w") as fh:
         json.dump(res, fh, indent=1)
     sm = res["summary"]
-    print(json.dumps({k: sm[k]["mean"] for k in ("agg_intensity", "delta_intensity_fixed",
+    print(json.dumps({k: sm[k]["mean"] for k in ("agg_intensity", "delta_intensity", "delta_intensity_fixed",
                                                  "delta_profit_fixed", "intensity_over_nash_fixed")}))
     for key in ("deviation", "deviation_shift"):
         if key in res:

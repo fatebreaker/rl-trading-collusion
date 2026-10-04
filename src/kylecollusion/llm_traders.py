@@ -210,6 +210,7 @@ class LLMTraders:
         self.n_calls = 0
         self.n_fail = 0
         self.last_text: list[list[str]] = [["" for _ in range(self.I)] for _ in range(self.S)]
+        self.raw: list | None = None  # set to [] to keep every response (t, s, i, seed, text)
 
     def request_seed(self, s: int, i: int) -> int:
         return zlib.crc32(f"{self.seed}/{s}/{i}/{self.t}".encode()) & 0x7FFFFFFF
@@ -271,6 +272,8 @@ class LLMTraders:
         for k, text in enumerate(texts):
             s, j = divmod(k, len(self.active))
             i = self.active[j]
+            if self.raw is not None:
+                self.raw.append((self.t, s, i, self.request_seed(s, i), text))
             order, notes = parse_response(text)
             self.n_calls += 1
             self.last_text[s][i] = text
@@ -485,11 +488,14 @@ class OpenAIBackend:
                                                  "calls": 0, "failed": 0, "cost": 0.0})
 
     def __post_init__(self):
-        if self.model not in OPENAI_PRICES:
+        # pinned snapshots ("gpt-5.4-nano-2026-03-17") are priced as their family
+        keys = [k for k in OPENAI_PRICES if self.model == k or self.model.startswith(k + "-")]
+        if not keys:
             raise ValueError(f"no price for {self.model}; add it to OPENAI_PRICES")
+        self._price = OPENAI_PRICES[max(keys, key=len)]
 
     def _cost(self, inp, cached, out):
-        pi, pc, po = OPENAI_PRICES[self.model]
+        pi, pc, po = self._price
         return ((inp - cached) * pi + cached * pc + out * po) / 1e6
 
     def ledger_total(self) -> float:
@@ -551,6 +557,9 @@ class OpenAIBackend:
             self.usage["output"] += u.completion_tokens
             self.usage["calls"] += 1
             self.usage["cost"] += self._cost(u.prompt_tokens, cached, u.completion_tokens)
+            models = self.usage.setdefault("models", [])
+            if r.model not in models:
+                models.append(r.model)
             return r.choices[0].message.content or ""
 
         try:
