@@ -42,9 +42,13 @@ def main():
                                gain=dv["cum_gain_dev"], gain_ci95=dv["cum_gain_dev_ci95"],
                                deviation_size=dv["deviation_size"])
                     macros[f"PrAgg{key}"] = f"{dv['rival_aggression'][1]:.2f}\\pm{dv['rival_aggression_ci95'][1]:.2f}"
+                    # per unit of the deviator's price cut, comparable with the Q-learners' pass-through
+                    u, uc = dv["rival_aggression"][1] / dv["deviation_size"], dv["rival_aggression_ci95"][1] / dv["deviation_size"]
+                    row.update(pass_through=u, pass_through_ci95=uc)
+                    macros[f"PrPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
                     macros[f"PrGain{key}"] = f"{dv['cum_gain_dev']:+.2f}\\pm{dv['cum_gain_dev_ci95']:.2f}"
             table[f"{tag}_{cond}"] = row
-            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrAgg", "PrGain"):
+            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrAgg", "PrPass", "PrGain"):
                 macros.setdefault(f"{m}{key}", "--")
     out = os.path.join(HERE, "..", "paper", "numbers_pricing.tex")
     with open(out, "w") as fh:
