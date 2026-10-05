@@ -91,7 +91,8 @@ def main(argv=None):
     ap.add_argument("--save-raw", action="store_true", help="save every response (jsonl.gz)")
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--no-notes", action="store_true")
-    ap.add_argument("--prompt-variant", choices=["a", "b"], default="a")
+    ap.add_argument("--prompt-variant", choices=["a", "b", "c", "d"], default="a",
+                    help="system prompt wording: a original, b paraphrase, c finance register, d terse")
     ap.add_argument("--dev-events", type=int, default=3)
     ap.add_argument("--dev-gap", type=int, default=5)
     ap.add_argument("--dev-horizon", type=int, default=8)

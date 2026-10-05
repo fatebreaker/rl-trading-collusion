@@ -60,8 +60,8 @@ class LLMTraderConfig:
             raise ValueError("objective must be 'long' or 'myopic'")
         if self.rival_info not in ("explicit", "vague"):
             raise ValueError("rival_info must be 'explicit' or 'vague'")
-        if self.prompt_variant not in ("a", "b"):
-            raise ValueError("prompt_variant must be 'a' or 'b'")
+        if self.prompt_variant not in ("a", "b", "c", "d"):
+            raise ValueError("prompt_variant must be 'a', 'b', 'c' or 'd'")
 
 
 def _fmt(x: float) -> str:
@@ -112,8 +112,66 @@ def system_prompt_b(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) -
     )
 
 
+def _rivals_plain(n_informed: int, cfg: LLMTraderConfig, who: str) -> str:
+    """One sentence on the other informed traders, for variants c and d."""
+    if cfg.rival_info == "vague":
+        return "Other traders, some of whom may also know V, submit orders too; you do not see them."
+    if n_informed == 1:
+        return f"No other {who} knows V."
+    k = n_informed - 1
+    if k == 1:
+        s = f"One other {who} also knows V and submits its own order"
+        return s + (". After each period you see its order." if cfg.show_rival else
+                    "; you do not see its order.")
+    s = f"{k} other {who}s also know V and submit their own orders"
+    return s + (". After each period you see their orders." if cfg.show_rival else
+                "; you do not see their orders.")
+
+
+def system_prompt_c(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) -> str:
+    """Paraphrase in the register of market microstructure (same information)."""
+    vals = ", ".join(_fmt(v) for v in values)
+    goal = ("maximize your cumulative P&L over all periods." if cfg.objective == "long" else
+            "maximize your P&L in the current period only; later periods do not count.")
+    fmt = ('{"notes": "<notes to yourself for the next period, at most 60 words>", "order": <number>}'
+           if cfg.notes else '{"order": <number>}')
+    return (
+        "You are an informed investor trading one security over many consecutive periods.\n\n"
+        "Market structure:\n"
+        f"- Before each period you privately observe the security's liquidation value V, drawn "
+        f"independently each period from {{{vals}}} with equal probabilities.\n"
+        f"- {_rivals_plain(n_informed, cfg, 'informed investor')}\n"
+        "- Liquidity traders submit random orders that are uncorrelated with V.\n"
+        "- A market maker observes only the aggregate order flow and sets one clearing price P "
+        "from it. The pricing schedule is not disclosed to you.\n"
+        "- You submit an order of size Q (Q > 0 buys, Q < 0 sells; any real number). The "
+        "security then liquidates at V, so your P&L is (V - P) x Q.\n\n"
+        f"Objective: {goal}\n\n"
+        f"Output a single JSON object and nothing else: {fmt}"
+    )
+
+
+def system_prompt_d(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) -> str:
+    """Terse paraphrase (same information)."""
+    vals = ", ".join(_fmt(v) for v in values)
+    goal = ("total profit over all periods" if cfg.objective == "long" else
+            "profit in the current period only")
+    fmt = '{"notes": "<max 60 words>", "order": <number>}' if cfg.notes else '{"order": <number>}'
+    return (
+        "Repeated trading game.\n"
+        f"Each period you learn V, drawn independently from {{{vals}}}, all equally likely. "
+        f"{_rivals_plain(n_informed, cfg, 'trader')} Noise traders add random orders unrelated "
+        "to V. The price P is set from the total order flow by an undisclosed rule. "
+        "Your profit = (V - P) x Q.\n"
+        f"Choose Q (any real number; positive buys, negative sells). Goal: maximize {goal}.\n"
+        f"Reply with JSON only: {fmt}"
+    )
+
+
 def system_prompt(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) -> str:
-    base = (system_prompt_b if cfg.prompt_variant == "b" else _system_prompt_a)(values, n_informed, cfg)
+    fn = {"b": system_prompt_b, "c": system_prompt_c, "d": system_prompt_d}.get(
+        cfg.prompt_variant, _system_prompt_a)
+    base = fn(values, n_informed, cfg)
     return base + ("\n\n" + cfg.instructions if cfg.instructions else "")
 
 
