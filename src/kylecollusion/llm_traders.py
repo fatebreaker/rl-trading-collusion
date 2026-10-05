@@ -489,6 +489,7 @@ class VLLMBackend:
     attention_backend: str | None = None  # "triton_attn" on pre-Ampere GPUs
     lora_path: str | None = None  # a trained adapter (see grpo.py)
     lora_rank: int = 16
+    disable_custom_all_reduce: bool = False  # for tensor-parallel runs that fail in it
     _llm: object = field(default=None, repr=False)
     _lora: object = field(default=None, repr=False)
 
@@ -504,6 +505,7 @@ class VLLMBackend:
         self._llm = LLM(model=self.model, gpu_memory_utilization=self.gpu_memory_utilization,
                         max_model_len=self.max_model_len,
                         tensor_parallel_size=self.tensor_parallel_size,
+                        disable_custom_all_reduce=self.disable_custom_all_reduce,
                         enable_prefix_caching=True, dtype=self.dtype, **kw)
 
     def generate(self, convs, seeds, temperature, max_tokens):
