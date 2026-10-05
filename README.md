@@ -1,17 +1,30 @@
-# Do AI Traders Collude? Diagnosing algorithmic collusion from Q-learning to language models
+# Do LLM Traders Collude? Auditing in-context and reinforcement-learning agents in a financial market
 
-Code, experiments and paper for a study of whether reinforcement-learning
-informed traders in a repeated Kyle (1985) market collude (sustain low trading
-with the threat of punishment) or merely under-trade because of a learning
-bias ("over-pruning").
+Code, results and paper for an audit of collusion among learning traders in a
+repeated Kyle (1985) market: whether low trading is collusion (sustained by
+the threat of punishment) or an artefact of how agents decide and learn. The
+audit (paired deviation tests with shared sampling seeds, placebos, scale
+sweeps, positive controls) is applied to tabular Q-learners, ten LLMs trading
+in context (seven open-weight models and three OpenAI models, with and without
+reasoning) and LLMs trained by GRPO in self-play.
 
-- **Paper:** `paper/main_v2.tex` (current: Q-learning, in-context and
-  reasoning language models, RL-trained language models); `paper/main.tex` and
-  `paper/main_ec.tex` are the earlier Q-learning-only versions. Figures and
-  numbers are built from the result files by `paper/make_results.py`,
-  `paper/make_llm_figures.py` and `paper/make_llm_tables.py`.
-- **Experiment logs:** `results/NOTES.md` (Q-learning), `results/LLM_NOTES.md`
-  (language models), plan in `results/PAPER_PLAN.md`
+- **Paper (ACL format):** `paper/main_acl.tex`, built by `paper/build_acl.sh`.
+  A longer journal version is `paper/main_rfs.tex`; `paper/main_v2.tex` is the
+  working paper.
+- **Replication:** `REPLICATION.md` (requirements, run times, how every result
+  was produced). All intermediate results are in `results/`, so the paper can
+  be rebuilt without rerunning any experiment.
+
+## Quick start
+
+```bash
+pip install -e ".[dev]" matplotlib numba      # simulation, tables, figures
+PYTHONPATH=src pytest                         # unit tests (about 1 minute)
+paper/build_acl.sh                            # rebuild every table, figure and number; compile the PDF
+```
+
+Rerunning the language-model experiments needs vLLM (open-weight models) and
+an OpenAI API key (`OPENAI_API_KEY`) for the hosted models; see `REPLICATION.md`.
 
 ## Language-model traders
 
@@ -25,6 +38,13 @@ bias ("over-pruning").
 - Runners: `experiments/llm_pilot.py` (one condition), `experiments/grpo_train.py`,
   `experiments/grpo_audit.sh`, `experiments/llm_*.sh`; `experiments/status.py`
   for monitoring; `experiments/llm_tabulate.py` for quick tables.
+- Model coverage and robustness: `experiments/llm_models.sh` (depth test for
+  one open-weight model), `llm_r1.sh` (DeepSeek-R1-Distill), `llm_gpt55.sh`
+  (GPT-5.5, flex tier), `llm_prompts.sh` (two more prompt wordings).
+- What traders write: `experiments/trace_analysis.py` (keyword coding),
+  `trace_judge.py` (LLM judge), `annotation_ai_judge.py` and
+  `annotation_agreement.py` (cross-check of the judge on a 200-item sample);
+  `null_bounds.py` pools the rival responses of all deviation tests.
 
 ## Main ideas
 
