@@ -106,6 +106,7 @@ def main(argv=None):
     ap.add_argument("--max-model-len", type=int, default=None, help="vLLM context (default 8192; 16384 with thinking)")
     ap.add_argument("--thinking", action="store_true", help="Qwen3 thinking mode (slow)")
     ap.add_argument("--reasoning-effort", default=None, help="OpenAI reasoning models")
+    ap.add_argument("--service-tier", default=None, help="OpenAI: 'flex' for half-price, slower calls")
     ap.add_argument("--run-budget", type=float, default=10.0, help="USD cap for this run (OpenAI)")
     ap.add_argument("--total-budget", type=float, default=50.0, help="USD cap over all runs (ledger)")
     ap.add_argument("--seed", type=int, default=0)
@@ -136,7 +137,7 @@ def main(argv=None):
     else:
         backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort,
                                 run_budget=a.run_budget, total_budget=a.total_budget,
-                                tag=os.path.basename(a.out))
+                                tag=os.path.basename(a.out), service_tier=a.service_tier)
 
     T, S, I = a.periods, env.S, env.I
     log = {k: np.zeros((T, S)) for k in ("v", "p", "lam", "y")}

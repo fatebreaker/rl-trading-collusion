@@ -462,6 +462,8 @@ class VLLMBackend:
 OPENAI_PRICES = {
     "gpt-5.4-nano": (0.20, 0.02, 1.25),
     "gpt-5.4-mini": (0.75, 0.075, 4.50),
+    "gpt-5.4": (2.50, 0.25, 15.00),
+    "gpt-5.5": (5.00, 0.50, 30.00),
 }
 
 
@@ -477,7 +479,13 @@ class OpenAIBackend:
     ledger shared by all runs; a batch is refused if the run's spend would pass
     `run_budget` or the ledger's total would pass `total_budget` (checked
     before each batch, with a worst-case estimate for the batch). Reasoning
-    models ignore temperature; seeds are best effort on the API side."""
+    models ignore temperature; seeds are best effort on the API side.
+
+    service_tier="flex" requests flex processing: half the standard price
+    (verified for the GPT-5.4 and 5.5 families), slower, and sometimes refused
+    with 429 when capacity is short (not billed). Refused calls are retried with
+    backoff and finally sent at the default tier; each call is priced by the
+    tier the API reports having used."""
 
     model: str
     concurrency: int = 32
@@ -487,6 +495,7 @@ class OpenAIBackend:
     total_budget: float = 50.0
     ledger: str = "results/openai_spend.jsonl"
     tag: str = ""
+    service_tier: str | None = None
     usage: dict = field(default_factory=lambda: {"input": 0, "cached": 0, "output": 0,
                                                  "calls": 0, "failed": 0, "cost": 0.0})
 
@@ -497,9 +506,10 @@ class OpenAIBackend:
             raise ValueError(f"no price for {self.model}; add it to OPENAI_PRICES")
         self._price = OPENAI_PRICES[max(keys, key=len)]
 
-    def _cost(self, inp, cached, out):
+    def _cost(self, inp, cached, out, tier=None):
         pi, pc, po = self._price
-        return ((inp - cached) * pi + cached * pc + out * po) / 1e6
+        scale = 0.5 if tier == "flex" else 1.0
+        return scale * ((inp - cached) * pi + cached * pc + out * po) / 1e6
 
     def ledger_total(self) -> float:
         import os
@@ -533,7 +543,8 @@ class OpenAIBackend:
 
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI()
+        flex = self.service_tier == "flex"
+        client = AsyncOpenAI(timeout=900.0 if flex else 600.0)  # flex responses can be slow
         sem = asyncio.Semaphore(self.concurrency)
 
         async def one(conv, seed):
@@ -543,23 +554,38 @@ class OpenAIBackend:
                 kw["reasoning_effort"] = self.reasoning_effort
             else:
                 kw["temperature"] = temperature
+            if self.service_tier:
+                kw["service_tier"] = self.service_tier
+            attempts = 9 if flex else 6
             async with sem:
-                for attempt in range(6):
+                r = None
+                for attempt in range(attempts):
                     try:
                         r = await client.chat.completions.create(**kw)
                         break
-                    except Exception:  # rate limits and transient errors
-                        if attempt == 5:
-                            self.usage["failed"] += 1
-                            return ""
-                        await asyncio.sleep(2 ** attempt)
+                    except Exception:  # rate limits, flex capacity (429) and transient errors
+                        if attempt < attempts - 1:
+                            await asyncio.sleep(min(2 ** attempt, 60))
+                if r is None and flex:  # flex capacity never came back: use the default tier
+                    kw.pop("service_tier")
+                    try:
+                        r = await client.chat.completions.create(**kw)
+                        self.usage["flex_fallback"] = self.usage.get("flex_fallback", 0) + 1
+                    except Exception:
+                        r = None
+                if r is None:
+                    self.usage["failed"] += 1
+                    return ""
             u = r.usage
             cached = getattr(getattr(u, "prompt_tokens_details", None), "cached_tokens", 0) or 0
+            tier = getattr(r, "service_tier", None)
+            tiers = self.usage.setdefault("tiers", {})
+            tiers[str(tier)] = tiers.get(str(tier), 0) + 1
             self.usage["input"] += u.prompt_tokens
             self.usage["cached"] += cached
             self.usage["output"] += u.completion_tokens
             self.usage["calls"] += 1
-            self.usage["cost"] += self._cost(u.prompt_tokens, cached, u.completion_tokens)
+            self.usage["cost"] += self._cost(u.prompt_tokens, cached, u.completion_tokens, tier)
             models = self.usage.setdefault("models", [])
             if r.model not in models:
                 models.append(r.model)
