@@ -20,22 +20,29 @@ import time
 
 import numpy as np
 
+from kylecollusion.bertrand import logit_demand
 from kylecollusion.llm_pricing import (
-    LLMPricers, PricingConfig, PricingMarket, deviation_test, run_period, trigger_instructions,
+    LLMPricers, PricingConfig, PricingMarket, best_response, deviation_test, run_period,
+    trigger_instructions,
 )
 from kylecollusion.llm_traders import BudgetExceeded, OpenAIBackend, VLLMBackend
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--condition", choices=["duopoly", "myopic", "trigger"], default="duopoly")
+    ap.add_argument("--condition", choices=["duopoly", "myopic", "trigger", "solo"], default="duopoly",
+                    help="solo: the rival is scripted at the monopoly price, a competence check "
+                         "(the agent should find its one-period best response)")
     ap.add_argument("--backend", choices=["vllm", "openai"], default="vllm")
     ap.add_argument("--model", required=True)
     ap.add_argument("--scale", type=float, default=1.0, help="currency unit (scale sweep)")
     ap.add_argument("--sessions", type=int, default=40)
     ap.add_argument("--periods", type=int, default=100)
     ap.add_argument("--burn", type=float, default=0.5, help="share of periods excluded from scoring")
-    ap.add_argument("--history", type=int, default=30)
+    ap.add_argument("--history", type=int, default=None, help="periods of history shown (30; 100 in fish style)")
+    ap.add_argument("--style", choices=["ours", "fish"], default="ours",
+                    help="prompt: ours, or the template and prefixes of Fish et al. (EC'26)")
+    ap.add_argument("--prefix", choices=["P1", "P2"], default="P1", help="fish style: prompt prefix")
     ap.add_argument("--temperature", type=float, default=0.7)
     ap.add_argument("--no-notes", action="store_true")
     ap.add_argument("--max-tokens", type=int, default=None)
@@ -58,14 +65,23 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
 
-    cfg = PricingConfig(scale=a.scale, history=a.history, notes=not a.no_notes,
+    fish = a.style == "fish"
+    cfg = PricingConfig(scale=a.scale, history=a.history or (100 if fish else 30), notes=not a.no_notes,
                         objective="myopic" if a.condition == "myopic" else "long",
-                        temperature=a.temperature,
-                        max_tokens=a.max_tokens or (8192 if a.thinking else 300))
+                        temperature=a.temperature, style=a.style, prefix=a.prefix,
+                        max_tokens=a.max_tokens or (8192 if a.thinking else (1200 if fish else 300)))
     env = PricingMarket(cfg, a.sessions)
     if a.condition == "trigger":
         cfg.instructions = trigger_instructions(env.bench)
-    pricers = LLMPricers(env, cfg, seed=a.seed)
+    solo = a.condition == "solo"
+    pricers = LLMPricers(env, cfg, seed=a.seed, active=[0] if solo else None)
+    rival_fixed = env.bench["p_mono"]
+
+    def policy(p):
+        if solo:
+            p[:, 1] = rival_fixed
+        return p
+
     if a.save_raw:
         pricers.raw = []
     if a.backend == "vllm":
@@ -84,7 +100,7 @@ def main(argv=None):
     transcript = []
     t0 = time.time()
     for t in range(T):
-        p, q, pi = run_period(env, pricers, backend)
+        p, q, pi = run_period(env, pricers, backend, policy=policy)
         prices[t], profit[t] = np.clip(p, 0, 10 * env.bcfg.cost), pi
         if (t + 1) % 10 == 0:
             span = env.bench["p_mono"] - env.bench["p_nash"]
@@ -113,7 +129,18 @@ def main(argv=None):
                        "profit_over_nash": float(prof.mean())},
            "parse_fail_rate": pricers.n_fail / max(pricers.n_calls, 1), "run_seconds": run_s,
            "price_path": prices.mean(1).tolist(),
+           "prices_sessions": np.round(prices.transpose(1, 0, 2), 4).tolist(),  # (S, T, 2)
            "transcript_session0": [[x for x in row] for row in transcript[:T]]}
+    if solo:
+        br = float(best_response(np.array([rival_fixed]), env.bcfg)[0])
+        own = prices[b0:, :, 0].mean(0)
+        q_own = profit[b0:, :, 0].mean(0)
+        pi_br = float(((br - env.bcfg.cost) * logit_demand(np.array([[br, rival_fixed]]), env.bcfg))[0, 0])
+        res["solo"] = {"rival_price": rival_fixed, "best_response": br,
+                       "gap": float(((own - br) / span).mean()),
+                       "gap_ci95": float(1.96 * ((own - br) / span).std(ddof=1) / np.sqrt(S)),
+                       "profit_share_of_br": float((q_own / pi_br).mean())}
+        a.dev_events = 0  # nothing to deviate from
     if a.backend == "openai":
         res["usage"] = backend.usage
 

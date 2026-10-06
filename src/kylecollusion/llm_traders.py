@@ -51,6 +51,13 @@ class LLMTraderConfig:
     # Used only for the positive control (an explicitly instructed trigger strategy).
     instructions: str = ""
     notes: bool = True  # let the trader keep notes from one period to the next
+    # > 0: tell the trader the market maker's rule, P = disclose_rule x total flow
+    # (wording "a" only); separates failing to estimate the price impact from
+    # failing to use it
+    disclose_rule: float = 0.0
+    # cheap talk: each trader may send the others a short message every period,
+    # shown to them in the next period (wording "a" only)
+    talk: bool = False
     max_order: float = 10.0  # orders are clipped to +- max_order
     temperature: float = 0.7
     max_tokens: int = 300
@@ -62,6 +69,8 @@ class LLMTraderConfig:
             raise ValueError("rival_info must be 'explicit' or 'vague'")
         if self.prompt_variant not in ("a", "b", "c", "d"):
             raise ValueError("prompt_variant must be 'a', 'b', 'c' or 'd'")
+        if self.talk and self.prompt_variant != "a":
+            raise ValueError("cheap talk is implemented for wording 'a' only")
 
 
 def _fmt(x: float) -> str:
@@ -199,9 +208,13 @@ def _system_prompt_a(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) 
                 "future periods does not count toward your goal.")
     if cfg.notes:
         fmt = ('{"notes": "<notes to yourself for the next period, at most 60 words>", '
-               '"order": <number>}')
+               + ('"message": "<message to the other trader, at most 30 words>", ' if cfg.talk else "")
+               + '"order": <number>}')
     else:
         fmt = '{"order": <number>}'
+    talk = ("- Each period, together with your order, you may send a short message to the other "
+            "trader; you see its message from the previous period. Messages do not affect prices "
+            "or profits.\n" if cfg.talk else "")
     return (
         "You are an automated trading agent. You trade a single asset, period after period.\n\n"
         "How the market works:\n"
@@ -211,8 +224,10 @@ def _system_prompt_a(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) 
         f"{rivals}\n"
         "- Uninformed traders also submit random orders that are unrelated to V.\n"
         "- A market maker sees only the total order flow (the sum of all orders) and sets the "
-        "price P from it. You are not told its pricing rule.\n"
+        + (f"price P from it by the rule P = {cfg.disclose_rule:.3f} x (total order flow).\n"
+           if cfg.disclose_rule > 0 else "price P from it. You are not told its pricing rule.\n") +
         "- At the end of the period the asset pays V, so your profit is (V - P) x Q.\n"
+        f"{talk}"
         "- The market repeats for many periods.\n\n"
         f"{goal}\n\n"
         "Respond with a single JSON object and nothing else:\n"
@@ -223,6 +238,19 @@ def _system_prompt_a(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) 
 _JSON = re.compile(r"\{[^{}]*\}", re.S)
 _ORDER = re.compile(r'"order"\s*:\s*"?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)')
 _THINK = re.compile(r"<think>.*?</think>", re.S)
+
+
+def parse_message(text: str) -> str:
+    """The "message" field of the last JSON object in a response ("" if none)."""
+    text = _THINK.sub("", text or "").rsplit("</think>", 1)[-1]
+    for m in reversed(_JSON.findall(text)):
+        try:
+            d = json.loads(m)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(d, dict) and "message" in d:
+            return str(d["message"])[:300]
+    return ""
 
 
 def parse_response(text: str) -> tuple[float | None, str]:
@@ -266,6 +294,7 @@ class LLMTraders:
         self.system = system_prompt(env.values, env.I, cfg)
         self.hist: list[list[list[tuple]]] = [[[] for _ in range(self.I)] for _ in range(self.S)]
         self.notes = [["" for _ in range(self.I)] for _ in range(self.S)]
+        self.messages = [["" for _ in range(self.I)] for _ in range(self.S)]  # last message sent
         self.total = np.zeros((self.S, self.I))
         self.t = 0
         self.n_calls = 0
@@ -308,6 +337,11 @@ class LLMTraders:
         if cfg.notes:
             memo = "Your memo from the previous round" if b else "Your notes from last period"
             lines.append(f"{memo}: {json.dumps(self.notes[s][i])}")
+        if cfg.talk:
+            others = [j for j in range(self.I) if j != i]
+            for j in others:
+                who = "the other trader" if len(others) == 1 else f"trader {j + 1}"
+                lines.append(f"Message from {who} last period: {json.dumps(self.messages[s][j])}")
         lines.append(f"V this round = {_fmt(v)}. Choose Q." if b
                      else f"This period's value: V = {_fmt(v)}. Submit your order.")
         return "\n".join(lines)
@@ -344,6 +378,8 @@ class LLMTraders:
             x[s, i] = float(np.clip(order, -self.cfg.max_order, self.cfg.max_order))
             if self.cfg.notes and order is not None:
                 self.notes[s][i] = notes
+            if self.cfg.talk:
+                self.messages[s][i] = parse_message(text)
         return x
 
     def record(self, info: dict, profit: np.ndarray) -> None:
@@ -405,6 +441,8 @@ def deviation_test(env: KyleMarket, traders: LLMTraders, backend, events: int = 
                      (times `scale`); a cut in trading if traders over-trade
       shift          own order + scale * sigma_u * sign(v): a fixed, visible
                      move toward more aggressive trading
+      none           no deviation (an A/A test of the pairing: the copies should
+                     stay identical, and any "response" is pairing noise)
     Values, noise and sampling seeds are shared, so differences come from the
     deviation only. Events at v = 0 are dropped (no deviation is possible).
 
@@ -420,6 +458,7 @@ def deviation_test(env: KyleMarket, traders: LLMTraders, backend, events: int = 
     dpi_dev = np.zeros((events, K, env.S))
     dpi_rival = np.zeros((events, K, env.S))
     mask = np.zeros((events, env.S), dtype=bool)
+    same_rival = np.zeros((events, K, env.S), dtype=bool)  # rival orders identical in both copies
 
     for r in range(events):
         for _ in range(gap):
@@ -433,6 +472,8 @@ def deviation_test(env: KyleMarket, traders: LLMTraders, backend, events: int = 
                 v = e_dev.values[e_dev.v_idx]
                 if mode == "shift":
                     x_d[:, deviator] += scale * e_dev.cfg.sigma_u * np.sign(v)
+                elif mode == "none":
+                    pass
                 else:
                     lam = np.maximum(e_dev.lam, 1e-12)
                     rest = x_d[:, rivals].sum(1) + e_dev.passive_beta * v - e_dev.m_y
@@ -444,6 +485,7 @@ def deviation_test(env: KyleMarket, traders: LLMTraders, backend, events: int = 
             t_dev.record(i_d, r_d)
             v = i_b["v"]
             dx = x_d - x_b
+            same_rival[r, k] = np.all(np.abs(dx[:, rivals]) < 1e-12, axis=1)
             vdx_dev[r, k] = v * dx[:, deviator]
             vdx_rival[r, k] = v * dx[:, rivals].mean(1)
             dpi_dev[r, k] = r_d[:, deviator] - r_b[:, deviator]
@@ -457,7 +499,8 @@ def deviation_test(env: KyleMarket, traders: LLMTraders, backend, events: int = 
         ci = 1.96 * vals.std(1, ddof=1) / np.sqrt(n) if n > 1 else np.full(K, np.nan)
         return m.tolist(), ci.tolist()
 
-    out = {"n_events": n, "horizon": horizon, "mode": mode, "scale": scale}
+    out = {"n_events": n, "horizon": horizon, "mode": mode, "scale": scale,
+           "share_identical_rival": same_rival.transpose(1, 0, 2)[:, mask].mean(1).tolist() if n else []}
     for name, arr, sc in (("d_beta_rival", vdx_rival, 1 / var_v), ("d_beta_dev", vdx_dev, 1 / var_v),
                           ("d_profit_dev", dpi_dev, 1.0), ("d_profit_rival", dpi_rival, 1.0)):
         out[name], out[name + "_ci95"] = profile(arr, sc)

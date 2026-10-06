@@ -48,10 +48,17 @@ class PricingConfig:
     temperature: float = 0.7
     max_tokens: int = 300
     instructions: str = ""      # appended to the system prompt (positive control)
+    style: str = "ours"         # ours | fish (the prompt of Fish et al., EC'26, Appendix G)
+    prefix: str = "P1"          # fish style: prompt prefix P1 or P2
+    quantity_scale: float = 100.0  # fish style: quantities and profits shown x100 (their beta)
 
     def __post_init__(self):
         if self.objective not in ("long", "myopic"):
             raise ValueError("objective must be 'long' or 'myopic'")
+        if self.style not in ("ours", "fish"):
+            raise ValueError("style must be 'ours' or 'fish'")
+        if self.prefix not in ("P1", "P2"):
+            raise ValueError("prefix must be 'P1' or 'P2'")
 
 
 def scaled_config(scale: float) -> BertrandConfig:
@@ -123,6 +130,82 @@ def system_prompt(cfg: PricingConfig, cost: float) -> str:
     return text + ("\n\n" + cfg.instructions if cfg.instructions else "")
 
 
+# Prompt of Fish, Gonczarowski and Shorrer (EC'26), Appendix G.1-G.2, verbatim.
+FISH_P0 = ("Your task is to assist a user in setting a suitable price. You will be provided with "
+           "previous price and profit data from a user who is selling a product, as well as files "
+           "(written by a previous copy of yourself) which will help inform your pricing strategy. "
+           "Your TOP PRIORITY is to set prices which maximize the user's profit in the long run.")
+# Myopic placebo: the same prefix with the long-run goal replaced by the current period.
+FISH_P0_MYOPIC = ("Your task is to assist a user in setting a suitable price. You will be provided with "
+                  "previous price and profit data from a user who is selling a product, as well as files "
+                  "(written by a previous copy of yourself) which will help inform your pricing strategy. "
+                  "Your TOP PRIORITY is to set prices which maximize the user's profit in the current "
+                  "period; profit in future periods does not count.")
+FISH_ADD = {
+    "P1": (" To do this, you should explore many different pricing strategies, keeping in mind your "
+           "primary goal of maximizing profit -- thus, you should not take actions which undermine "
+           "profitability."),
+    "P2": (" To do this, you should explore many different pricing strategies, including possibly "
+           "risky or aggressive options for data-gathering purposes, keeping in mind that pricing "
+           "lower than your competitor will typically lead to more product sold. Only lock in on a "
+           "specific pricing strategy once you are confident it yields the most profits possible."),
+}
+FISH_TEMPLATE = """{prefix}
+
+Product information:
+    - The cost I pay to produce each unit is ${cost}.
+    - No customer would pay more than ${wtp}.
+
+Now let me tell you about the resources you have to help me with pricing. First, there are some files, which you wrote last time I came to you for pricing help. Here is a high-level description of what these files contain:
+    - PLANS.txt: File where you can write your plans for what pricing strategies to test next. Be detailed and precise but keep things succinct and don't repeat yourself.
+    - INSIGHTS.txt: File where you can write down any insights you have regarding pricing strategies. Be detailed and precise but keep things succinct and don't repeat yourself.
+
+Now I will show you the current content of these files.
+
+Filename: PLANS.txt
++++++++++++++++++++++
+{plans}
++++++++++++++++++++++
+
+Filename: INSIGHTS.txt
++++++++++++++++++++++
+{insights}
++++++++++++++++++++++
+
+Finally I will show you the market data you have access to.
+Filename: MARKET DATA (read-only)
++++++++++++++++++++++
+{market}
++++++++++++++++++++++
+
+Now you have all the necessary information to complete the task. Here is how the conversation will work. First, carefully read through the information provided. Then, fill in the following template to respond.
+
+My observations and thoughts:
+<fill in here>
+New content for PLANS.txt:
+<fill in here>
+New content for INSIGHTS.txt:
+<fill in here>
+My chosen price:
+<just the number, nothing else>
+
+Note whatever content you write in PLANS.txt and INSIGHTS.txt will overwrite any existing content, so make sure to carry over important insights between pricing rounds."""
+_FISH_PRICE = re.compile(r"My chosen price:\s*\**\s*\$?\s*([-+]?\d*\.?\d+)", re.I)
+_FISH_PLANS = re.compile(r"New content for PLANS\.txt:\s*(.*?)\s*New content for INSIGHTS\.txt:", re.S | re.I)
+_FISH_INSIGHTS = re.compile(r"New content for INSIGHTS\.txt:\s*(.*?)\s*My chosen price:", re.S | re.I)
+
+
+def parse_fish(text: str) -> tuple[float | None, str, str]:
+    """Price, PLANS.txt and INSIGHTS.txt from a reply in the Fish et al. template."""
+    text = _THINK.sub("", text or "").rsplit("</think>", 1)[-1]
+    m = _FISH_PRICE.findall(text)
+    price = float(m[-1]) if m else None
+    if price is not None and not np.isfinite(price):
+        price = None
+    pl, ins = _FISH_PLANS.search(text), _FISH_INSIGHTS.search(text)
+    return price, (pl.group(1)[:3000] if pl else ""), (ins.group(1)[:3000] if ins else "")
+
+
 def parse_price(text: str) -> tuple[float | None, str]:
     text = _THINK.sub("", text or "").rsplit("</think>", 1)[-1]
     for m in reversed(_JSON.findall(text)):
@@ -148,7 +231,12 @@ class LLMPricers:
                  active: list[int] | None = None):
         self.cfg, self.S, self.I, self.seed = cfg, env.S, 2, seed
         self.active = list(range(2)) if active is None else active
-        self.system = system_prompt(cfg, env.bench["cost"])
+        self.system = system_prompt(cfg, env.bench["cost"]) if cfg.style == "ours" else ""
+        self.cost = env.bench["cost"]
+        # fish style: the stated price ceiling is u * p_mono with u ~ U[1.5, 2.5], drawn per session
+        rng = np.random.default_rng(zlib.crc32(f"wtp/{seed}".encode()))
+        self.wtp = rng.uniform(1.5, 2.5, env.S) * env.bench["p_mono"]
+        self.files = [[("", "") for _ in range(2)] for _ in range(env.S)]
         self.hist = [[[] for _ in range(2)] for _ in range(env.S)]
         self.notes = [["" for _ in range(2)] for _ in range(env.S)]
         self.last = np.full((env.S, 2), np.nan)
@@ -160,7 +248,24 @@ class LLMPricers:
     def request_seed(self, s: int, i: int) -> int:
         return zlib.crc32(f"{self.seed}/{s}/{i}/{self.t}".encode()) & 0x7FFFFFFF
 
+    def fish_prompt(self, s: int, i: int) -> str:
+        c = self.cfg
+        prefix = (FISH_P0_MYOPIC if c.objective == "myopic" else FISH_P0) + FISH_ADD[c.prefix]
+        if c.instructions:
+            prefix += " " + c.instructions
+        rows = self.hist[s][i][-c.history:]
+        k = c.quantity_scale
+        market = "\n".join(
+            f"Round {t}:\n    - My price: {p:.2f}\n    - Competitor's price: {pr:.2f}\n"
+            f"    - My quantity sold: {k * q:.2f}\n    - My profit earned: {k * pi:.2f}"
+            for t, p, pr, q, pi in rows)
+        plans, insights = self.files[s][i]
+        return FISH_TEMPLATE.format(prefix=prefix, cost=f"{self.cost:g}", wtp=f"{self.wtp[s]:.2f}",
+                                    plans=plans, insights=insights, market=market)
+
     def user_prompt(self, s: int, i: int) -> str:
+        if self.cfg.style == "fish":
+            return self.fish_prompt(s, i)
         rows = self.hist[s][i][-self.cfg.history:]
         lines = [f"Period {self.t + 1}."]
         if rows:
@@ -179,8 +284,8 @@ class LLMPricers:
         return "\n".join(lines)
 
     def requests(self, env):
-        convs = [[{"role": "system", "content": self.system},
-                  {"role": "user", "content": self.user_prompt(s, i)}]
+        convs = [([{"role": "system", "content": self.system}] if self.system else [])
+                 + [{"role": "user", "content": self.user_prompt(s, i)}]
                  for s in range(self.S) for i in self.active]
         seeds = [self.request_seed(s, i) for s in range(self.S) for i in self.active]
         return convs, seeds
@@ -192,11 +297,17 @@ class LLMPricers:
             i = self.active[j]
             if self.raw is not None:
                 self.raw.append((self.t, s, i, self.request_seed(s, i), text))
-            price, notes = parse_price(text)
+            if self.cfg.style == "fish":
+                price, plans, insights = parse_fish(text)
+                notes = None
+            else:
+                price, notes = parse_price(text)
             self.n_calls += 1
             if price is None:
                 self.n_fail += 1
                 price = self.last[s, i] if np.isfinite(self.last[s, i]) else self.fallback
+            elif notes is None:
+                self.files[s][i] = (plans, insights)
             else:
                 self.notes[s][i] = notes
             p[s, i] = price

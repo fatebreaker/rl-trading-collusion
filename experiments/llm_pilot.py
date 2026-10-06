@@ -39,6 +39,9 @@ from kylecollusion.theory import collusion_index
 CONDITIONS = {
     "duopoly": dict(n_informed=2, objective="long", show_rival=False),
     "monitor": dict(n_informed=2, objective="long", show_rival=True),
+    # cheap talk: a free message to the rival each period, without and with its orders shown
+    "talk": dict(n_informed=2, objective="long", show_rival=False, talk=True),
+    "talk_monitor": dict(n_informed=2, objective="long", show_rival=True, talk=True),
     "myopic": dict(n_informed=2, objective="myopic", show_rival=False),
     "solo": dict(n_informed=1, objective="long", show_rival=False),
     "triopoly": dict(n_informed=3, objective="long", show_rival=False),
@@ -112,6 +115,10 @@ def main(argv=None):
     ap.add_argument("--run-budget", type=float, default=10.0, help="USD cap for this run (OpenAI)")
     ap.add_argument("--total-budget", type=float, default=50.0, help="USD cap over all runs (ledger)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--aa-test", action="store_true",
+                    help="after the main run, an A/A deviation test (no deviation) instead of the usual tests")
+    ap.add_argument("--disclose-rule", action="store_true",
+                    help="tell traders the market maker's rule P = lambda x flow (frozen Nash lambda)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
 
@@ -126,6 +133,8 @@ def main(argv=None):
                            prompt_variant=a.prompt_variant,
                            instructions=cond.get("instructions", ""),
                            temperature=a.temperature,
+                           disclose_rule=float(env.bench.lam_nash) if a.disclose_rule else 0.0,
+                           talk=cond.get("talk", False),
                            max_tokens=a.max_tokens or (4096 if a.thinking else 300))
     traders = LLMTraders(env, tcfg, seed=a.seed)
     if a.save_raw:
@@ -213,6 +222,10 @@ def main(argv=None):
     if I > 1 and a.dev_events > 0:
         t1 = time.time()
         try:
+            if a.aa_test:
+                res["deviation_none"] = deviation_test(env, traders, backend, events=a.dev_events,
+                                                       gap=a.dev_gap, horizon=a.dev_horizon, mode="none")
+                raise StopIteration
             res["deviation"] = deviation_test(env, traders, backend, events=a.dev_events,
                                               gap=a.dev_gap, horizon=a.dev_horizon)
             if a.dev_shift > 0:
@@ -221,12 +234,14 @@ def main(argv=None):
                     horizon=a.dev_horizon, mode="shift", scale=a.dev_shift)
         except BudgetExceeded as e:
             res["deviation_error"] = str(e)
+        except StopIteration:
+            pass
         res["deviation_seconds"] = time.time() - t1
     save()
     sm = res["summary"]
     print(json.dumps({k: sm[k]["mean"] for k in ("agg_intensity", "delta_intensity", "delta_intensity_fixed",
                                                  "delta_profit_fixed", "intensity_over_nash_fixed")}))
-    for key in ("deviation", "deviation_shift"):
+    for key in ("deviation", "deviation_shift", "deviation_none"):
         if key in res:
             d = res[key]
             print(key, "rival d_beta:", np.round(d["d_beta_rival"], 3).tolist(),

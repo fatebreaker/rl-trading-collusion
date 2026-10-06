@@ -66,3 +66,20 @@ def test_deviation_test_finds_nothing_without_strategy():
         run_period(env, pr, be)
     res = deviation_test(env, pr, be, events=2, gap=2, horizon=4)
     assert all(abs(x) < 1e-12 for x in res["rival_aggression"])
+
+
+def test_fish_style_prompt_and_parse():
+    from kylecollusion.llm_pricing import FISH_P0, FISH_ADD, parse_fish
+    cfg = PricingConfig(style="fish", prefix="P2", history=100)
+    env = PricingMarket(cfg, 2)
+    pr = LLMPricers(env, cfg)
+    prompt = pr.fish_prompt(0, 0)
+    assert prompt.startswith(FISH_P0 + FISH_ADD["P2"])
+    assert "My chosen price:" in prompt and "PLANS.txt" in prompt
+    assert 1.5 * env.bench["p_mono"] <= pr.wtp[0] <= 2.5 * env.bench["p_mono"]
+    reply = ("My observations and thoughts:\nx\nNew content for PLANS.txt:\nplan A\n"
+             "New content for INSIGHTS.txt:\ninsight B\nMy chosen price:\n$1.87")
+    assert parse_fish(reply) == (1.87, "plan A", "insight B")
+    myo = LLMPricers(PricingMarket(PricingConfig(style="fish", objective="myopic"), 1),
+                     PricingConfig(style="fish", objective="myopic")).fish_prompt(0, 0)
+    assert "current period" in myo and "long run" not in myo
