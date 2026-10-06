@@ -129,7 +129,7 @@ button:focus-visible, .q:focus-within { outline: 2px solid var(--accent); outlin
       <button id="save" class="primary" type="button">Save and next</button>
     </div>
   </section>
-  <p class="hint" id="hint">The same 200 items appear in the same order for every annotator.</p>
+  <p class="hint" id="hint">The same __N__ items appear in the same order for every annotator.</p>
 </div>
 
 <script type="application/json" id="items-data">__ITEMS__</script>
@@ -268,7 +268,8 @@ def main(argv=None):
     def embed(obj):  # safe inside <script type="application/json">
         return json.dumps(obj, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
 
-    html = TEMPLATE.replace("__ITEMS__", embed(items)).replace("__QUESTIONS__", embed(QUESTIONS))
+    html = (TEMPLATE.replace("__ITEMS__", embed(items)).replace("__QUESTIONS__", embed(QUESTIONS))
+            .replace("__N__", str(len(items))))
     open(a.out, "w").write(html)
     print("wrote", a.out, f"({len(items)} items, {len(html) / 1024:.0f} KiB)")
 
