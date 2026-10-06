@@ -22,6 +22,34 @@ def load(tag, cond):
     return json.load(open(f)) if os.path.exists(f) else None
 
 
+def write_table(table):
+    """Appendix table: every pricing condition with both deviation tests."""
+    names = {"duopoly_k1": "duopoly", "duopoly_k10": "duopoly, prices $\\times10$",
+             "myopic_k1": "myopic objective", "trigger_k1": "instructed trigger"}
+    pm = lambda m, c, sgn="": "--" if m is None else f"${m:{sgn}.2f}_{{\\pm{c:.2f}}}$"  # noqa: E731
+    L = ["\\begin{tabular}{@{}llcccccc@{}}", "\\toprule",
+         " & & price & profit & \\multicolumn{2}{c}{best-response deviation} & \\multicolumn{2}{c}{price cut} \\\\",
+         "\\cmidrule(lr){5-6}\\cmidrule(lr){7-8}",
+         "Model & Condition & index & / Nash & rival & gain & rival & gain \\\\", "\\midrule"]
+    first = True
+    for tag, mname in (("qwen3_8b", "Qwen3-8B"), ("mistral7b", "Mistral-7B")):
+        rows = [(c, table.get(f"{tag}_{c}")) for c in names if table.get(f"{tag}_{c}")]
+        if not rows:
+            continue
+        if not first:
+            L.append("\\midrule")
+        first = False
+        for k, (c, r) in enumerate(rows):
+            L.append(" & ".join([mname if k == 0 else "", names[c], pm(r["index"], r["index_ci95"]),
+                                 f"${r['profit_over_nash']:.2f}$",
+                                 pm(r.get("pass_through"), r.get("pass_through_ci95")),
+                                 pm(r.get("gain"), r.get("gain_ci95"), "+"),
+                                 pm(r.get("cut_pass_through"), r.get("cut_pass_through_ci95")),
+                                 pm(r.get("cut_gain"), r.get("cut_gain_ci95"), "+")]) + " \\\\")
+    L += ["\\bottomrule", "\\end{tabular}"]
+    open(os.path.join(HERE, "..", "paper", "table_pricing.tex"), "w").write("\n".join(L) + "\n")
+
+
 def main():
     macros, table = {}, {}
     for tag, mname in MODELS.items():
@@ -47,8 +75,15 @@ def main():
                     row.update(pass_through=u, pass_through_ci95=uc)
                     macros[f"PrPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
                     macros[f"PrGain{key}"] = f"{dv['cum_gain_dev']:+.2f}\\pm{dv['cum_gain_dev_ci95']:.2f}"
+                dc = d.get("deviation_cut")
+                if dc:
+                    u, uc = dc["rival_aggression"][1] / dc["deviation_size"], dc["rival_aggression_ci95"][1] / dc["deviation_size"]
+                    row.update(cut_pass_through=u, cut_pass_through_ci95=uc, cut_gain=dc["cum_gain_dev"],
+                               cut_gain_ci95=dc["cum_gain_dev_ci95"])
+                    macros[f"PrCutPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
+                    macros[f"PrCutGain{key}"] = f"{dc['cum_gain_dev']:+.2f}\\pm{dc['cum_gain_dev_ci95']:.2f}"
             table[f"{tag}_{cond}"] = row
-            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrAgg", "PrPass", "PrGain"):
+            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrAgg", "PrPass", "PrGain", "PrCutPass", "PrCutGain"):
                 macros.setdefault(f"{m}{key}", "--")
     out = os.path.join(HERE, "..", "paper", "numbers_pricing.tex")
     with open(out, "w") as fh:
@@ -56,6 +91,7 @@ def main():
         for k in sorted(macros):
             fh.write(f"\\newcommand{{\\{k}}}{{{macros[k]}}}\n")
     json.dump(table, open(os.path.join(HERE, "..", "results", "pricing_summary.json"), "w"), indent=1)
+    write_table(table)
     for k, v in table.items():
         print(k, "missing" if v is None else {a: round(b, 3) for a, b in v.items()})
 
