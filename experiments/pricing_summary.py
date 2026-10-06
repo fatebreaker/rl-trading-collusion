@@ -15,7 +15,7 @@ import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "results", "llm_bertrand")
-MODELS = {"qwen3_8b": "Qwen", "mistral7b": "Mistral"}
+MODELS = {"qwen3_8b": "Qwen", "qwen3_8b_think": "QwenThink", "mistral7b": "Mistral"}
 MIN_CUT = 0.1  # smallest mean deviation (in units of p_mono - p_Nash) for a per-unit response
 CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic", "trigger_k1": "Trigger"}
 
@@ -35,7 +35,7 @@ def write_table(table):
          "\\cmidrule(lr){5-6}\\cmidrule(lr){7-8}",
          "Model & Condition & index & / Nash & rival & gain & rival & gain \\\\", "\\midrule"]
     first = True
-    for tag, mname in (("qwen3_8b", "Qwen3-8B"), ("mistral7b", "Mistral-7B")):
+    for tag, mname in (("qwen3_8b", "Qwen3-8B"), ("qwen3_8b_think", "Qwen3-8B, thinking"), ("mistral7b", "Mistral-7B")):
         rows = [(c, table.get(f"{tag}_{c}")) for c in names if table.get(f"{tag}_{c}")]
         if not rows:
             continue
