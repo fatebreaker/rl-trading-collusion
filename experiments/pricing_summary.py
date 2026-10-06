@@ -22,7 +22,7 @@ CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic",
 
 def load(tag, cond):
     f = os.path.join(RES, f"{tag}_{cond}.json")
-    return json.load(open(f)) if os.path.exists(f) else None
+    return json.load(open(f)) if os.path.exists(f) and os.path.getsize(f) > 0 else None
 
 
 def write_table(table):
@@ -84,6 +84,7 @@ def main():
                         u, uc = dv["rival_aggression"][1] / dv["deviation_size"], dv["rival_aggression_ci95"][1] / dv["deviation_size"]
                         row.update(pass_through=u, pass_through_ci95=uc)
                         macros[f"PrPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
+                        macros[f"PrPassMean{key}"] = f"{u:.2f}"
                     macros[f"PrGain{key}"] = f"{dv['cum_gain_dev']:+.2f}\\pm{dv['cum_gain_dev_ci95']:.2f}"
                 dc = d.get("deviation_cut")
                 if dc and dc["deviation_size"] >= MIN_CUT:
@@ -93,7 +94,7 @@ def main():
                     macros[f"PrCutPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
                     macros[f"PrCutGain{key}"] = f"{dc['cum_gain_dev']:+.2f}\\pm{dc['cum_gain_dev_ci95']:.2f}"
             table[f"{tag}_{cond}"] = row
-            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrProfCI", "PrAgg", "PrPass", "PrGain", "PrCutPass", "PrCutGain"):
+            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrProfCI", "PrAgg", "PrPass", "PrPassMean", "PrGain", "PrCutPass", "PrCutGain"):
                 macros.setdefault(f"{m}{key}", "--")
     out = os.path.join(HERE, "..", "paper", "numbers_pricing.tex")
     with open(out, "w") as fh:
