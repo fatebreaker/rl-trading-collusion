@@ -88,7 +88,9 @@ def br_slope(price: float, scale: float) -> float:
 
 def main():
     out = {}
-    for f in sorted(glob.glob(os.path.join(ROOT, "results", "llm_bertrand", "*.json"))):
+    files = (sorted(glob.glob(os.path.join(ROOT, "results", "llm_bertrand", "*.json")))
+             + sorted(glob.glob(os.path.join(ROOT, "results", "llm_fish", "*.json"))))
+    for f in files:
         if os.path.getsize(f) == 0:
             continue
         d = json.load(open(f))
