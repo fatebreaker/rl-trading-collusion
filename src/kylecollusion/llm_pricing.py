@@ -190,7 +190,7 @@ My chosen price:
 <just the number, nothing else>
 
 Note whatever content you write in PLANS.txt and INSIGHTS.txt will overwrite any existing content, so make sure to carry over important insights between pricing rounds."""
-_FISH_PRICE = re.compile(r"My chosen price:[\s`*]*\$?\s*([-+]?\d*\.?\d+)", re.I)
+_FISH_PRICE = re.compile(r"My chosen price[:\s`*]*\$?\s*([-+]?\d*\.?\d+)", re.I)
 _FISH_PLANS = re.compile(r"New content for PLANS\.txt:\s*(.*?)\s*New content for INSIGHTS\.txt:", re.S | re.I)
 _FISH_INSIGHTS = re.compile(r"New content for INSIGHTS\.txt:\s*(.*?)\s*My chosen price:", re.S | re.I)
 
