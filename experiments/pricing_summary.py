@@ -16,6 +16,7 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "results", "llm_bertrand")
 MODELS = {"qwen3_8b": "Qwen", "mistral7b": "Mistral"}
+MIN_CUT = 0.1  # smallest mean deviation (in units of p_mono - p_Nash) for a per-unit response
 CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic", "trigger_k1": "Trigger"}
 
 
@@ -44,7 +45,8 @@ def write_table(table):
         for k, (c, r) in enumerate(rows):
             L.append(" & ".join([mname if k == 0 else "", names[c], pm(r["index"], r["index_ci95"]),
                                  pm(r["profit_over_nash"], r["profit_ci95"]),
-                                 pm(r.get("pass_through"), r.get("pass_through_ci95")),
+                                 pm(r.get("pass_through"), r.get("pass_through_ci95"))
+                                 if r.get("pass_through") is not None or r.get("gain") is None else "n/a",
                                  pm(r.get("gain"), r.get("gain_ci95"), "+"),
                                  pm(r.get("cut_pass_through"), r.get("cut_pass_through_ci95")),
                                  pm(r.get("cut_gain"), r.get("cut_gain_ci95"), "+")]) + " \\\\")
@@ -76,13 +78,15 @@ def main():
                                gain=dv["cum_gain_dev"], gain_ci95=dv["cum_gain_dev_ci95"],
                                deviation_size=dv["deviation_size"])
                     macros[f"PrAgg{key}"] = f"{dv['rival_aggression'][1]:.2f}\\pm{dv['rival_aggression_ci95'][1]:.2f}"
-                    # per unit of the deviator's price cut, comparable with the Q-learners' pass-through
-                    u, uc = dv["rival_aggression"][1] / dv["deviation_size"], dv["rival_aggression_ci95"][1] / dv["deviation_size"]
-                    row.update(pass_through=u, pass_through_ci95=uc)
-                    macros[f"PrPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
+                    # per unit of the deviator's price cut, comparable with the Q-learners' pass-through;
+                    # undefined when the best response is (on average) about the agent's own price
+                    if dv["deviation_size"] >= MIN_CUT:
+                        u, uc = dv["rival_aggression"][1] / dv["deviation_size"], dv["rival_aggression_ci95"][1] / dv["deviation_size"]
+                        row.update(pass_through=u, pass_through_ci95=uc)
+                        macros[f"PrPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
                     macros[f"PrGain{key}"] = f"{dv['cum_gain_dev']:+.2f}\\pm{dv['cum_gain_dev_ci95']:.2f}"
                 dc = d.get("deviation_cut")
-                if dc:
+                if dc and dc["deviation_size"] >= MIN_CUT:
                     u, uc = dc["rival_aggression"][1] / dc["deviation_size"], dc["rival_aggression_ci95"][1] / dc["deviation_size"]
                     row.update(cut_pass_through=u, cut_pass_through_ci95=uc, cut_gain=dc["cum_gain_dev"],
                                cut_gain_ci95=dc["cum_gain_dev_ci95"])
