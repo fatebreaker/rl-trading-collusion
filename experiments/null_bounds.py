@@ -42,9 +42,14 @@ def tests():
                 m, c = t["d_beta_rival"][1], t["d_beta_rival_ci95"][1]
                 if m != m or c != c:
                     continue
+                # summed over the periods after the deviation (up to six); the half-width
+                # adds the per-lag half-widths, an upper bound under any correlation
+                H = min(6, len(t["d_beta_rival"]) - 1)
+                cm = float(sum(t["d_beta_rival"][1:H + 1]))
+                cc = float(sum(t["d_beta_rival_ci95"][1:H + 1]))
                 out.append({"file": f"{d}/{name}", "test": key, "control": control,
                             "condition": r.get("condition"), "n": t.get("n_events"),
-                            "mean": m, "ci": c})
+                            "mean": m, "ci": c, "cum_mean": cm, "cum_ci": cc, "cum_lags": H})
     return out
 
 
@@ -120,7 +125,14 @@ def main():
                      "re_pooled": m, "re_pooled_ci": c, "median_mde80": mde[len(mde) // 2],
                      "below_ctrl": sum(t["mean"] + t["ci"] < effect for t in ts)}
     m_all, c_all = random_effects([t for t in null if t["ci"] / 1.96 > 0.001], floor)
-    res.update(by_structure=groups, control_by_structure=ctrl_eff, re_pooled=m_all, re_pooled_ci=c_all)
+    # cumulative response over the following periods
+    cum = [{"mean": t["cum_mean"], "ci": t["cum_ci"]} for t in null if t["cum_ci"] / 1.96 > 0.001]
+    m_cum, c_cum = random_effects(cum, floor)
+    cum_sig = sum(t["cum_mean"] - t["cum_ci"] > 0 for t in null)
+    ctrl_cum = next((t["cum_mean"] for t in ctrl if t["file"].endswith("qwen3_8b_punisher.json")
+                     and t["test"] == "deviation"), float("nan"))
+    res.update(by_structure=groups, control_by_structure=ctrl_eff, re_pooled=m_all, re_pooled_ci=c_all,
+               cum_pooled=m_cum, cum_pooled_ci=c_cum, cum_sig=cum_sig, ctrl_cum=ctrl_cum)
     json.dump({**res, "tests": null}, open(os.path.join(ROOT, "results", "null_bounds.json"), "w"), indent=1)
     macros = {"NullTests": len(null), "NullSigPos": len(sig_pos),
               "NullExpectedFP": f"{0.025 * len(null):.1f}",
@@ -134,6 +146,8 @@ def main():
         macros.update({f"Null{nm}N": r["n"], f"Null{nm}Sig": r["sig_pos"],
                        f"Null{nm}Pooled": f"{r['re_pooled']:.3f}", f"Null{nm}PooledCI": f"{r['re_pooled_ci']:.3f}",
                        f"Null{nm}MDE": f"{r['median_mde80']:.2f}", f"Null{nm}BelowCtrl": r["below_ctrl"]})
+    macros.update({"NullCumPooled": f"{abs(m_cum) if abs(m_cum) < 5e-4 else m_cum:.3f}",
+                   "NullCumPooledCI": f"{c_cum:.3f}", "NullCumSig": cum_sig, "NullCtrlCum": f"{ctrl_cum:.2f}"})
     macros.update({"NullCtrlFlow": f"{ctrl_eff.get('flow_br', float('nan')):.2f}",
                    "NullCtrlShift": f"{ctrl_eff.get('monitor_shift', float('nan')):.2f}"})
     with open(os.path.join(ROOT, "paper", "numbers_nulls.tex"), "w") as fh:
