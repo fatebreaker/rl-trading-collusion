@@ -1,4 +1,4 @@
-# Do LLM Traders Collude? Auditing in-context and reinforcement-learning agents in a financial market
+# Is anyone enforcing the cartel? Auditing collusion claims about LLM agents
 
 Code, results and paper for an audit of collusion among learning traders in a
 repeated Kyle (1985) market: whether low trading is collusion (sustained by

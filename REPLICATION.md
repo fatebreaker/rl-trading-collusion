@@ -1,4 +1,4 @@
-# Replication package: "Do LLM Traders Collude? Auditing In-Context and Reinforcement-Learning Agents in a Financial Market"
+# Replication package: "Is Anyone Enforcing the Cartel? Auditing Collusion Claims About LLM Agents"
 
 Structure follows the Social Science Data Editors template (README v1.1).
 
