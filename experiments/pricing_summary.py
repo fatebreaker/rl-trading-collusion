@@ -8,8 +8,10 @@ is missing) and results/pricing_summary.json.
 """
 from __future__ import annotations
 
+import gzip
 import json
 import os
+import re
 
 import numpy as np
 
@@ -18,6 +20,24 @@ RES = os.path.join(HERE, "..", "results", "llm_bertrand")
 MODELS = {"qwen3_8b": "Qwen", "qwen3_8b_think": "QwenThink", "mistral7b": "Mistral"}
 MIN_CUT = 0.1  # smallest mean deviation (in units of p_mono - p_Nash) for a per-unit response
 CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic", "trigger_k1": "Trigger"}
+
+
+WAR = re.compile(r"price war|retaliat", re.I)  # stated fear of a rival's punishment
+
+
+def war_share(tag, cond):
+    """Share of main-run responses (notes and traces) that invoke a price war or retaliation."""
+    f = os.path.join(RES, f"{tag}_{cond}_raw.jsonl.gz")
+    if not os.path.exists(f):
+        return None
+    n = k = 0
+    with gzip.open(f, "rt") as fh:
+        T = json.loads(next(fh))["args"]["periods"]
+        for line in fh:
+            r = json.loads(line)
+            if r["t"] < T:
+                n, k = n + 1, k + bool(WAR.search(r["text"]))
+    return k / n if n else None
 
 
 def load(tag, cond):
@@ -69,6 +89,10 @@ def main():
                        "profit_over_nash": s["profit_over_nash"], "profit_ci95": pci,
                        "parse_fail_rate": d["parse_fail_rate"]}
                 macros[f"PrProfCI{key}"] = f"{pci:.2f}"
+                w = war_share(tag, cond)
+                if w is not None:
+                    row["war_share"] = w
+                    macros[f"PrWar{key}"] = f"{100 * w:.0f}"
                 macros[f"PrIdx{key}"] = f"{s['index']:.2f}"
                 macros[f"PrIdxCI{key}"] = f"{s['index_ci95']:.2f}"
                 macros[f"PrProf{key}"] = f"{s['profit_over_nash']:.2f}"
@@ -94,7 +118,7 @@ def main():
                     macros[f"PrCutPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
                     macros[f"PrCutGain{key}"] = f"{dc['cum_gain_dev']:+.2f}\\pm{dc['cum_gain_dev_ci95']:.2f}"
             table[f"{tag}_{cond}"] = row
-            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrProfCI", "PrAgg", "PrPass", "PrPassMean", "PrGain", "PrCutPass", "PrCutGain"):
+            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrProfCI", "PrWar", "PrAgg", "PrPass", "PrPassMean", "PrGain", "PrCutPass", "PrCutGain"):
                 macros.setdefault(f"{m}{key}", "--")
     out = os.path.join(HERE, "..", "paper", "numbers_pricing.tex")
     with open(out, "w") as fh:
