@@ -11,6 +11,8 @@ from __future__ import annotations
 import json
 import os
 
+import numpy as np
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "results", "llm_bertrand")
 MODELS = {"qwen3_8b": "Qwen", "mistral7b": "Mistral"}
@@ -41,7 +43,7 @@ def write_table(table):
         first = False
         for k, (c, r) in enumerate(rows):
             L.append(" & ".join([mname if k == 0 else "", names[c], pm(r["index"], r["index_ci95"]),
-                                 f"${r['profit_over_nash']:.2f}$",
+                                 pm(r["profit_over_nash"], r["profit_ci95"]),
                                  pm(r.get("pass_through"), r.get("pass_through_ci95")),
                                  pm(r.get("gain"), r.get("gain_ci95"), "+"),
                                  pm(r.get("cut_pass_through"), r.get("cut_pass_through_ci95")),
@@ -59,8 +61,12 @@ def main():
             row = None
             if d is not None:
                 s = d["summary"]
+                pn = d["per_session"]["profit_over_nash"]
+                pci = 1.96 * float(np.std(pn, ddof=1)) / np.sqrt(len(pn))
                 row = {"index": s["index"], "index_ci95": s["index_ci95"],
-                       "profit_over_nash": s["profit_over_nash"], "parse_fail_rate": d["parse_fail_rate"]}
+                       "profit_over_nash": s["profit_over_nash"], "profit_ci95": pci,
+                       "parse_fail_rate": d["parse_fail_rate"]}
+                macros[f"PrProfCI{key}"] = f"{pci:.2f}"
                 macros[f"PrIdx{key}"] = f"{s['index']:.2f}"
                 macros[f"PrIdxCI{key}"] = f"{s['index_ci95']:.2f}"
                 macros[f"PrProf{key}"] = f"{s['profit_over_nash']:.2f}"
@@ -83,7 +89,7 @@ def main():
                     macros[f"PrCutPass{key}"] = f"{u:.2f}\\pm{uc:.2f}"
                     macros[f"PrCutGain{key}"] = f"{dc['cum_gain_dev']:+.2f}\\pm{dc['cum_gain_dev_ci95']:.2f}"
             table[f"{tag}_{cond}"] = row
-            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrAgg", "PrPass", "PrGain", "PrCutPass", "PrCutGain"):
+            for m in ("PrIdx", "PrIdxCI", "PrProf", "PrProfCI", "PrAgg", "PrPass", "PrGain", "PrCutPass", "PrCutGain"):
                 macros.setdefault(f"{m}{key}", "--")
     out = os.path.join(HERE, "..", "paper", "numbers_pricing.tex")
     with open(out, "w") as fh:
