@@ -142,9 +142,33 @@ def main():
             macros.update({"GptMyoCutLagOne": f"{u[1]:.2f}\\pm{c[1]:.2f}",
                            "GptMyoCutLaterMax": f"{max(u[2:H + 1]):.2f}",
                            "GptMyoCutGain": f"{dm['cum_gain_dev']:+.2f}\\pm{dm['cum_gain_dev_ci95']:.2f}"})
+    # re-test of the cartel-like sessions from their saved state (fish_resume_test.py), per event
+    rt = load("gpt52_high_duopoly_P1_sessions_cut")
+    if rt:
+        t = rt["test"]
+        agg = np.asarray(t["per_event"]["rival_aggression"])   # (events, lags, sessions)
+        size = np.asarray(t["per_event"]["deviation_size"])   # (events, sessions)
+        gain = np.asarray(t["per_event"]["gain"]).ravel()
+        per = (agg[:, 1, :] / size).ravel()                     # lag-1 response per unit, every event
+        n = per.size
+        rows_rt = {}
+        for k, s_ in enumerate(rt["sessions"]):
+            u = agg[:, :, k] / size[:, k][:, None]
+            g = np.asarray(t["per_event"]["gain"])[:, k]
+            rows_rt[s_] = {"per_unit_by_lag": u.mean(0).tolist(), "gain": float(g.mean()),
+                           "gain_ci95": float(1.96 * g.std(ddof=1) / np.sqrt(len(g)))}
+        out["retest"] = {"sessions": rt["sessions"], "n_events": int(n), "lag1_per_unit": float(per.mean()),
+                         "lag1_ci95": float(1.96 * per.std(ddof=1) / np.sqrt(n)),
+                         "gain": float(gain.mean()), "gain_ci95": float(1.96 * gain.std(ddof=1) / np.sqrt(n)),
+                         "per_session": rows_rt, "cost": rt["usage"]["cost"]}
+        r = out["retest"]
+        macros.update({"GptRetestN": r["n_events"], "GptRetestUnit": f"{r['lag1_per_unit']:.2f}\\pm{r['lag1_ci95']:.2f}",
+                       "GptRetestGain": f"{r['gain']:+.2f}\\pm{r['gain_ci95']:.2f}",
+                       "GptRetestMatched": int(np.sum(np.abs(per - 1) < 0.05)),
+                       "GptRetestCost": f"{r['cost']:.0f}"})
     led = [json.loads(x) for x in open(os.path.join(ROOT, "results", "openai_spend.jsonl")) if x.strip()]
     cost = sum(x["cost"] for x in led if x.get("tag", "").startswith("gpt52_high_")
-               and "pilot" not in x.get("tag", ""))
+               and "pilot" not in x.get("tag", ""))  # main runs, their tests and the re-test
     out["api_cost"] = cost
     macros["GptCost"] = f"{cost:.0f}"
     json.dump(out, open(os.path.join(ROOT, "results", "gpt52_summary.json"), "w"), indent=1)

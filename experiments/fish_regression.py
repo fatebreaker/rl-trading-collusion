@@ -94,7 +94,7 @@ def main():
         if os.path.getsize(f) == 0:
             continue
         d = json.load(open(f))
-        if d.get("condition") == "solo":
+        if "args" not in d or d.get("condition") == "solo":  # skip re-tests and the competence screen
             continue
         P = prices_of(f, d)
         if P is None:
