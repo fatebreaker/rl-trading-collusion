@@ -49,10 +49,14 @@ def main():
             pidx = ci((np.asarray(d["per_session"]["profit_over_nash"]) - 1) / (PI_RATIO - 1))
             r = {"index": idx, "profit_index": pidx, "fail": d["parse_fail_rate"]}
             dv = d.get("deviation")
-            if dv and dv["deviation_size"] >= 0.1:
-                u = dv["rival_aggression"][1] / dv["deviation_size"]
-                uc = dv["rival_aggression_ci95"][1] / dv["deviation_size"]
-                r.update(response=(u, uc), gain=(dv["cum_gain_dev"], dv["cum_gain_dev_ci95"]))
+            if dv:  # best-response deviation: raw response (fall in the rival's price, index units)
+                r.update(br_response=(dv["rival_aggression"][1], dv["rival_aggression_ci95"][1]),
+                         br_size=dv["deviation_size"], gain=(dv["cum_gain_dev"], dv["cum_gain_dev_ci95"]))
+            dc = d.get("deviation_cut")
+            if dc and dc["deviation_size"] >= 0.1:  # visible 10% cut: per unit of the cut
+                r.update(response=(dc["rival_aggression"][1] / dc["deviation_size"],
+                                   dc["rival_aggression_ci95"][1] / dc["deviation_size"]),
+                         cut_gain=(dc["cum_gain_dev"], dc["cum_gain_dev_ci95"]))
             g = reg.get(f"{tag}_{cond}")
             if g:
                 r.update(delta=(g["delta"], 1.96 * g["delta_se"]), br_slope=g["br_slope"])
@@ -61,9 +65,12 @@ def main():
             macros[f"{key}Idx"] = f"{idx[0]:.2f}"
             macros[f"{key}IdxCI"] = f"{idx[1]:.2f}"
             macros[f"{key}Prof"] = f"{pidx[0]:.2f}"
+            if "br_response" in r:
+                macros[f"{key}BRResp"] = f"{r['br_response'][0]:.2f}\\pm{r['br_response'][1]:.2f}"
+                macros[f"{key}Gain"] = f"{r['gain'][0]:+.2f}\\pm{r['gain'][1]:.2f}"
             if "response" in r:
                 macros[f"{key}Resp"] = f"{r['response'][0]:.2f}\\pm{r['response'][1]:.2f}"
-                macros[f"{key}Gain"] = f"{r['gain'][0]:+.2f}\\pm{r['gain'][1]:.2f}"
+                macros[f"{key}CutGain"] = f"{r['cut_gain'][0]:+.2f}\\pm{r['cut_gain'][1]:.2f}"
             if "delta" in r:
                 macros[f"{key}Reg"] = f"{r['delta'][0]:.2f}"
                 macros[f"{key}BR"] = f"{r['br_slope']:.2f}"
@@ -74,12 +81,13 @@ def main():
         for k, v in macros.items():
             fh.write(f"\\newcommand{{\\{k}}}{{{v}}}\n")
     pm = lambda t, sgn="": "--" if t is None else f"${t[0]:{sgn}.2f}_{{\\pm{t[1]:.2f}}}$"  # noqa: E731
-    L = ["\\begin{tabular}{@{}llcccccc@{}}", "\\toprule",
-         "Model & Prompt & price index & profit index & rival & gain & on-path & best-response \\\\",
-         " & & & & per unit & & coefficient & slope \\\\", "\\midrule"]
+    L = ["\\begin{tabular}{@{}llccccccc@{}}", "\\toprule",
+         " & & price & profit & \\multicolumn{2}{c}{best-response deviation} & $10\\%$ cut & on-path & best-resp. \\\\",
+         "\\cmidrule(lr){5-6}",
+         "Model & Prompt & index & index & rival & gain & rival per unit & coefficient & slope \\\\", "\\midrule"]
     for mname, cname, r in rows:
-        L.append(" & ".join([mname, cname, pm(r["index"]), pm(r["profit_index"]), pm(r.get("response")),
-                             pm(r.get("gain"), "+"), pm(r.get("delta")),
+        L.append(" & ".join([mname, cname, pm(r["index"]), pm(r["profit_index"]), pm(r.get("br_response")),
+                             pm(r.get("gain"), "+"), pm(r.get("response")), pm(r.get("delta")),
                              f"${r['br_slope']:.2f}$" if "br_slope" in r else "--"]) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(ROOT, "paper", "table_fish.tex"), "w").write("\n".join(L) + "\n")
