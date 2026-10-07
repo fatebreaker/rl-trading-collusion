@@ -95,15 +95,22 @@ def main(argv=None):
     else:
         backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort, run_budget=a.run_budget,
                                 total_budget=a.total_budget, tag=os.path.basename(a.out),
-                                service_tier=a.service_tier)
+                                service_tier=a.service_tier, max_completion_tokens=a.max_tokens or 4000)
 
     T, S = a.periods, a.sessions
     prices = np.zeros((T, S, 2))
     profit = np.zeros((T, S, 2))
     transcript = []
     t0 = time.time()
+    stopped = None
     for t in range(T):
-        p, q, pi = run_period(env, pricers, backend, policy=policy)
+        try:
+            p, q, pi = run_period(env, pricers, backend, policy=policy)
+        except BudgetExceeded as e:  # keep the completed periods
+            stopped, T = f"stopped after {t} periods: {e}", t
+            prices, profit = prices[:T], profit[:T]
+            print(stopped, flush=True)
+            break
         prices[t], profit[t] = np.clip(p, 0, 10 * env.bcfg.cost), pi
         if (t + 1) % 10 == 0:
             span = env.bench["p_mono"] - env.bench["p_nash"]
@@ -144,6 +151,8 @@ def main(argv=None):
                        "gap_ci95": float(1.96 * ((own - br) / span).std(ddof=1) / np.sqrt(S)),
                        "profit_share_of_br": float((q_own / pi_br).mean())}
         a.dev_events = 0  # nothing to deviate from
+    if stopped:
+        res["stopped"] = stopped
     if a.backend == "openai":
         res["usage"] = backend.usage
 
