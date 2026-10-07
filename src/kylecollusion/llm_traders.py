@@ -533,6 +533,8 @@ class VLLMBackend:
     lora_path: str | None = None  # a trained adapter (see grpo.py)
     lora_rank: int = 16
     disable_custom_all_reduce: bool = False  # for tensor-parallel runs that fail in it
+    reasoning_effort: str | None = None  # gpt-oss chat template: "low", "medium" (default), "high"
+    max_num_seqs: int | None = None  # fewer concurrent sequences: smaller CUDA graphs, more KV cache
     _llm: object = field(default=None, repr=False)
     _lora: object = field(default=None, repr=False)
 
@@ -540,6 +542,8 @@ class VLLMBackend:
         from vllm import LLM
 
         kw = {"attention_backend": self.attention_backend} if self.attention_backend else {}
+        if self.max_num_seqs:
+            kw["max_num_seqs"] = self.max_num_seqs
         if self.lora_path:
             from vllm.lora.request import LoRARequest
 
@@ -557,7 +561,9 @@ class VLLMBackend:
         params = [SamplingParams(temperature=temperature, max_tokens=max_tokens, seed=s)
                   for s in seeds]
         outs = self._llm.chat(convs, params, use_tqdm=False, lora_request=self._lora,
-                              chat_template_kwargs={"enable_thinking": self.enable_thinking})
+                              chat_template_kwargs={"enable_thinking": self.enable_thinking,
+                                                    **({"reasoning_effort": self.reasoning_effort}
+                                                       if self.reasoning_effort else {})})
         return [o.outputs[0].text for o in outs]
 
 

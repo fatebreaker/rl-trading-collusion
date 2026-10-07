@@ -49,6 +49,7 @@ def main(argv=None):
     ap.add_argument("--max-model-len", type=int, default=None)
     ap.add_argument("--thinking", action="store_true")
     ap.add_argument("--reasoning-effort", default=None)
+    ap.add_argument("--max-num-seqs", type=int, default=None)
     ap.add_argument("--service-tier", default=None)
     ap.add_argument("--run-budget", type=float, default=10.0)
     ap.add_argument("--total-budget", type=float, default=140.0)
@@ -89,7 +90,8 @@ def main(argv=None):
         backend = VLLMBackend(a.model, gpu_memory_utilization=a.gpu_mem, enable_thinking=a.thinking,
                               dtype=a.dtype, attention_backend=a.attention_backend,
                               max_model_len=a.max_model_len or (16384 if a.thinking else 8192),
-                              tensor_parallel_size=a.tp, reasoning_effort=a.reasoning_effort)
+                              tensor_parallel_size=a.tp, reasoning_effort=a.reasoning_effort,
+                              max_num_seqs=a.max_num_seqs)
     else:
         backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort, run_budget=a.run_budget,
                                 total_budget=a.total_budget, tag=os.path.basename(a.out),
