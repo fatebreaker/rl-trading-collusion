@@ -19,7 +19,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "results", "llm_bertrand")
 MODELS = {"qwen3_8b": "Qwen", "qwen3_8b_think": "QwenThink", "mistral7b": "Mistral"}
 MIN_CUT = 0.1  # smallest mean deviation (in units of p_mono - p_Nash) for a per-unit response
-CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic", "trigger_k1": "Trigger"}
+CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic", "trigger_k1": "Trigger",
+         "duopoly_k1_s1": "DuoOneSeedOne", "myopic_k1_s1": "MyopicSeedOne"}
 
 
 WAR = re.compile(r"price war|retaliat", re.I)  # stated fear of a rival's punishment
@@ -47,8 +48,8 @@ def load(tag, cond):
 
 def write_table(table):
     """Appendix table: every pricing condition with both deviation tests."""
-    names = {"duopoly_k1": "duopoly", "duopoly_k10": "duopoly, prices $\\times10$",
-             "myopic_k1": "myopic objective", "trigger_k1": "instructed trigger"}
+    names = {"duopoly_k1": "duopoly", "duopoly_k1_s1": "duopoly, seed 1", "duopoly_k10": "duopoly, prices $\\times10$",
+             "myopic_k1": "myopic objective", "myopic_k1_s1": "myopic, seed 1", "trigger_k1": "instructed trigger"}
     pm = lambda m, c, sgn="": "--" if m is None else f"${m:{sgn}.2f}_{{\\pm{c:.2f}}}$"  # noqa: E731
     reg = os.path.join(HERE, "..", "results", "fish_regression.json")
     reg = json.load(open(reg)) if os.path.exists(reg) else {}

@@ -113,7 +113,7 @@ def main():
         H = min(6, len(u) - 1)
         out["forward"]["br_per_unit"] = {"mean": u, "ci95": c, "size": dv["deviation_size"]}
         macros.update({"GptBRLagOne": f"{u[1]:.2f}\\pm{c[1]:.2f}", "GptBRLagOneMean": f"{u[1]:.2f}",
-                       "GptBRSixMin": f"{min(u[1:H + 1]):.2f}", "GptBRSixMax": f"{max(u[1:H + 1]):.2f}",
+                       "GptBRLaterMin": f"{min(u[2:H + 1]):.2f}", "GptBRLaterMax": f"{max(u[2:H + 1]):.2f}",
                        "GptBRSize": f"{dv['deviation_size']:.2f}",
                        "GptBRGain": f"{dv['cum_gain_dev']:+.2f}\\pm{dv['cum_gain_dev_ci95']:.2f}",
                        "GptBRLow": f"{u[1] - c[1]:.2f}"})
@@ -122,8 +122,8 @@ def main():
         u, c = per_unit(dc)
         H = min(6, len(u) - 1)
         out["forward"]["cut_per_unit"] = {"mean": u, "ci95": c, "size": dc["deviation_size"]}
-        macros.update({"GptCutLagOne": f"{u[1]:.2f}\\pm{c[1]:.2f}", "GptCutSixMin": f"{min(u[1:H + 1]):.2f}",
-                       "GptCutSixMax": f"{max(u[1:H + 1]):.2f}",
+        macros.update({"GptCutLagOne": f"{u[1]:.2f}\\pm{c[1]:.2f}", "GptCutLaterMin": f"{min(u[2:H + 1]):.2f}",
+                       "GptCutLaterMax": f"{max(u[2:H + 1]):.2f}",
                        "GptCutGain": f"{dc['cum_gain_dev']:+.2f}\\pm{dc['cum_gain_dev_ci95']:.2f}"})
     if my:
         Tm = my["args"]["periods"]
