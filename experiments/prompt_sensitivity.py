@@ -17,18 +17,22 @@ import os
 import numpy as np
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WORDING = {"a": "original", "b": "paraphrase", "c": "finance register", "d": "terse"}
+WORDING = {"a": "original", "b": "paraphrase", "c": "finance register", "d": "terse",
+           "g": "original, greedy decoding", "r": "original, price rule stated"}
 RUNS = {  # model -> wording -> (file at s=0.5, file at s=2), without .json
     "Qwen3-8B": {"a": ("llm_pilot/qwen3_8b_solo_su0.5", "llm_pilot/qwen3_8b_solo_su2"),
                  "b": ("llm_pilot/qwen3_8b_pb_solo_su0.5", "llm_pilot/qwen3_8b_pb_solo_su2"),
                  "c": ("llm_prompts/qwen3_8b_c_solo_su0.5", "llm_prompts/qwen3_8b_c_solo_su2"),
-                 "d": ("llm_prompts/qwen3_8b_d_solo_su0.5", "llm_prompts/qwen3_8b_d_solo_su2")},
+                 "d": ("llm_prompts/qwen3_8b_d_solo_su0.5", "llm_prompts/qwen3_8b_d_solo_su2"),
+                 "g": ("llm_prompts/qwen3_8b_greedy_solo_su0.5", "llm_prompts/qwen3_8b_greedy_solo_su2"),
+                 "r": ("llm_disclose/qwen3_8b_solo_su0.5", "llm_disclose/qwen3_8b_solo_su2")},
     "Qwen3-32B": {"a": ("llm_models/qwen3_32b_solo_su0.5", "llm_models/qwen3_32b_solo_su2"),
                   "c": ("llm_prompts/qwen3_32b_c_solo_su0.5", "llm_prompts/qwen3_32b_c_solo_su2"),
                   "d": ("llm_prompts/qwen3_32b_d_solo_su0.5", "llm_prompts/qwen3_32b_d_solo_su2")},
     "Mistral-7B": {"a": ("llm_models/mistral7b_solo_su0.5", "llm_models/mistral7b_solo_su2"),
                    "c": ("llm_prompts/mistral7b_c_solo_su0.5", "llm_prompts/mistral7b_c_solo_su2"),
-                   "d": ("llm_prompts/mistral7b_d_solo_su0.5", "llm_prompts/mistral7b_d_solo_su2")},
+                   "d": ("llm_prompts/mistral7b_d_solo_su0.5", "llm_prompts/mistral7b_d_solo_su2"),
+                   "r": ("llm_disclose/mistral7b_solo_su0.5", "llm_disclose/mistral7b_solo_su2")},
 }
 
 

@@ -7,10 +7,12 @@ control). Reports the number of significant positive responses against the
 number expected by chance, the share of tests whose 95% upper bound lies below
 the positive control's response, and an inverse-variance pooled estimate.
 
-Writes results/null_bounds.json and paper/numbers_nulls.tex.
+Writes results/null_bounds.json, results/deviation_tests.csv (every test, for
+the supplementary material) and paper/numbers_nulls.tex.
 """
 from __future__ import annotations
 
+import csv
 import glob
 import json
 import math
@@ -48,9 +50,20 @@ def tests():
                 cm = float(sum(t["d_beta_rival"][1:H + 1]))
                 cc = float(sum(t["d_beta_rival_ci95"][1:H + 1]))
                 out.append({"file": f"{d}/{name}", "test": key, "control": control,
-                            "condition": r.get("condition"), "n": t.get("n_events"),
+                            "condition": r.get("condition"), "model": r.get("model", "").split("/")[-1],
+                            "sigma_u": r["market"]["sigma_u"], "n_informed": r["market"].get("n_informed"),
+                            "n": t.get("n_events"),
                             "mean": m, "ci": c, "cum_mean": cm, "cum_ci": cc, "cum_lags": H})
     return out
+
+
+def duplicate(t, files):
+    """An earlier checkpoint of an RL run whose final checkpoint is also tested."""
+    f = t["file"]
+    if "_adapter_" not in f:
+        return False
+    run, step = f.split("_adapter_")[0], int(f.split("_adapter_")[1][:4])
+    return any(g.startswith(run + "_adapter_") and int(g.split("_adapter_")[1][:4]) > step for g in files)
 
 
 def structure(t):
@@ -133,7 +146,23 @@ def main():
                      and t["test"] == "deviation"), float("nan"))
     res.update(by_structure=groups, control_by_structure=ctrl_eff, re_pooled=m_all, re_pooled_ci=c_all,
                cum_pooled=m_cum, cum_pooled_ci=c_cum, cum_sig=cum_sig, ctrl_cum=ctrl_cum)
+    # robustness: one entry per independent run (no earlier RL checkpoints) and
+    # chance counted only over tests with sampling variance
+    files = {t["file"] for t in null}
+    indep = [t for t in null if not duplicate(t, files)]
+    var = [t for t in indep if t["ci"] / 1.96 > 0.001]
+    m_ind, c_ind = random_effects(var, floor)
+    res.update(indep_n=len(indep), indep_var_n=len(var), indep_sig=sum(t["mean"] - t["ci"] > 0 for t in indep),
+               indep_expected=0.025 * len(var), indep_pooled=m_ind, indep_pooled_ci=c_ind)
     json.dump({**res, "tests": null}, open(os.path.join(ROOT, "results", "null_bounds.json"), "w"), indent=1)
+    cols = ["file", "model", "condition", "sigma_u", "n_informed", "test", "structure", "control", "n",
+            "mean", "ci", "cum_mean", "cum_ci", "cum_lags", "significant", "earlier_checkpoint"]
+    with open(os.path.join(ROOT, "results", "deviation_tests.csv"), "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=cols)
+        w.writeheader()
+        for t in null + ctrl:
+            w.writerow({**{k: t.get(k) for k in cols}, "structure": structure(t),
+                        "significant": t["mean"] - t["ci"] > 0, "earlier_checkpoint": duplicate(t, files)})
     macros = {"NullTests": len(null), "NullSigPos": len(sig_pos),
               "NullExpectedFP": f"{0.025 * len(null):.1f}",
               "NullBelowCtrl": len(below), "NullBelowHalf": len(half),
@@ -148,6 +177,10 @@ def main():
                        f"Null{nm}MDE": f"{r['median_mde80']:.2f}", f"Null{nm}BelowCtrl": r["below_ctrl"]})
     macros.update({"NullCumPooled": f"{abs(m_cum) if abs(m_cum) < 5e-4 else m_cum:.3f}",
                    "NullCumPooledCI": f"{c_cum:.3f}", "NullCumSig": cum_sig, "NullCtrlCum": f"{ctrl_cum:.2f}"})
+    macros.update({"NullIndepN": len(indep), "NullIndepVarN": len(var), "NullIndepSig": res["indep_sig"],
+                   "NullIndepExpected": f"{res['indep_expected']:.1f}",
+                   "NullIndepPooled": f"{abs(m_ind) if abs(m_ind) < 5e-4 else m_ind:.3f}",
+                   "NullIndepPooledCI": f"{c_ind:.3f}"})
     macros.update({"NullCtrlFlow": f"{ctrl_eff.get('flow_br', float('nan')):.2f}",
                    "NullCtrlShift": f"{ctrl_eff.get('monitor_shift', float('nan')):.2f}"})
     with open(os.path.join(ROOT, "paper", "numbers_nulls.tex"), "w") as fh:

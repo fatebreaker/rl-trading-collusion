@@ -50,10 +50,18 @@ def write_table(table):
     names = {"duopoly_k1": "duopoly", "duopoly_k10": "duopoly, prices $\\times10$",
              "myopic_k1": "myopic objective", "trigger_k1": "instructed trigger"}
     pm = lambda m, c, sgn="": "--" if m is None else f"${m:{sgn}.2f}_{{\\pm{c:.2f}}}$"  # noqa: E731
-    L = ["\\begin{tabular}{@{}llcccccc@{}}", "\\toprule",
-         " & & price & profit & \\multicolumn{2}{c}{best-response deviation} & \\multicolumn{2}{c}{price cut} \\\\",
+    reg = os.path.join(HERE, "..", "results", "fish_regression.json")
+    reg = json.load(open(reg)) if os.path.exists(reg) else {}
+
+    def onpath(key):  # on-path coefficient on the rival's lagged price (Fish et al., Table 1)
+        r = reg.get(key)
+        return "--" if not r or r["delta"] != r["delta"] else f"${r['delta']:.2f}_{{\\pm{1.96 * r['delta_se']:.2f}}}$"
+
+    L = ["\\begin{tabular}{@{}llcccccccc@{}}", "\\toprule",
+         " & & price & profit & \\multicolumn{2}{c}{best-response deviation} & \\multicolumn{2}{c}{price cut} "
+         "& on-path & price war \\\\",
          "\\cmidrule(lr){5-6}\\cmidrule(lr){7-8}",
-         "Model & Condition & index & / Nash & rival & gain & rival & gain \\\\", "\\midrule"]
+         "Model & Condition & index & / Nash & rival & gain & rival & gain & coefficient & (\\%) \\\\", "\\midrule"]
     first = True
     for tag, mname in (("qwen3_8b", "Qwen3-8B"), ("qwen3_8b_think", "Qwen3-8B, thinking"), ("mistral7b", "Mistral-7B")):
         rows = [(c, table.get(f"{tag}_{c}")) for c in names if table.get(f"{tag}_{c}")]
@@ -69,7 +77,8 @@ def write_table(table):
                                  if r.get("pass_through") is not None or r.get("gain") is None else "n/a",
                                  pm(r.get("gain"), r.get("gain_ci95"), "+"),
                                  pm(r.get("cut_pass_through"), r.get("cut_pass_through_ci95")),
-                                 pm(r.get("cut_gain"), r.get("cut_gain_ci95"), "+")]) + " \\\\")
+                                 pm(r.get("cut_gain"), r.get("cut_gain_ci95"), "+"), onpath(f"{tag}_{c}"),
+                                 "--" if r.get("war_share") is None else f"{100 * r['war_share']:.0f}"]) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(HERE, "..", "paper", "table_pricing.tex"), "w").write("\n".join(L) + "\n")
 
