@@ -29,13 +29,14 @@ from kylecollusion.llm_pricing import (LLMPricers, PricingConfig, PricingMarket,
 from kylecollusion.llm_traders import OpenAIBackend  # noqa: E402
 
 
-def rebuild(run: dict, raw_path: str, sessions: list[int]):
-    """Market and pricers for `sessions` of `run`, at the end of its main run."""
+def rebuild(run: dict, raw_path: str, sessions: list[int], objective: str | None = None):
+    """Market and pricers for `sessions` of `run`, at the end of its main run. `objective`
+    ("long" or "myopic") overrides the run's objective: the same state, another goal."""
     ra = run["args"]
     fish = ra["style"] == "fish"
     cfg = PricingConfig(scale=ra["scale"], history=ra.get("history") or (100 if fish else 30),
                         notes=not ra.get("no_notes", False),
-                        objective="myopic" if ra["condition"] == "myopic" else "long",
+                        objective=objective or ("myopic" if ra["condition"] == "myopic" else "long"),
                         temperature=ra["temperature"], style=ra["style"], prefix=ra["prefix"],
                         max_tokens=ra.get("max_tokens") or (1200 if fish else 300))
     P = np.asarray(run["prices_sessions"], float)  # (S, T, 2)
@@ -83,6 +84,8 @@ def main(argv=None):
     ap.add_argument("--horizon", type=int, default=6)
     ap.add_argument("--run-budget", type=float, default=20.0)
     ap.add_argument("--total-budget", type=float, default=140.0)
+    ap.add_argument("--objective", default=None, choices=["long", "myopic"],
+                    help="override the run's objective (placebo at the run's state)")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", default=None)
     a = ap.parse_args(argv)
@@ -91,7 +94,7 @@ def main(argv=None):
     ra = run["args"]
     S_full = len(run["prices_sessions"])
     sessions = list(range(S_full)) if a.sessions is None else [int(x) for x in a.sessions.split(",")]
-    cfg, env, pricers = rebuild(run, a.run.replace(".json", "_raw.jsonl.gz"), sessions)
+    cfg, env, pricers = rebuild(run, a.run.replace(".json", "_raw.jsonl.gz"), sessions, a.objective)
     span = env.bench["p_mono"] - env.bench["p_nash"]
     last_idx = (pricers.last - env.bench["p_nash"]) / span
     print("rebuilt sessions", sessions, "at t =", pricers.t, "| last prices (index):",
@@ -115,7 +118,8 @@ def main(argv=None):
                           "start_index": float(last_idx[k].mean())}
         print(f"session {s}: start index {last_idx[k].mean():.2f}, mean size {size[:, k].mean():.2f}, "
               f"per unit by lag {np.round(u, 2).tolist()}", flush=True)
-    out = {"run": os.path.relpath(a.run, ROOT), "sessions": sessions, "mode": a.mode, "test": d,
+    out = {"run": os.path.relpath(a.run, ROOT), "sessions": sessions, "mode": a.mode, "objective": cfg.objective,
+           "test": d,
            "per_session": per_session, "usage": backend.usage}
     path = a.out or a.run.replace(".json", f"_resume_{a.mode}.json")
     json.dump(out, open(path, "w"), indent=1)

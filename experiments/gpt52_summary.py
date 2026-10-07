@@ -166,6 +166,45 @@ def main():
                        "GptRetestGain": f"{r['gain']:+.2f}\\pm{r['gain_ci95']:.2f}",
                        "GptRetestMatched": int(np.sum(np.abs(per - 1) < 0.05)),
                        "GptRetestCost": f"{r['cost']:.0f}"})
+    if rt:  # per session (two sessions; events within a session are not independent)
+        ps = out["retest"]["per_session"]
+        units = [f"{ps[k]['per_unit_by_lag'][1]:.2f}" for k in sorted(ps, key=int)]
+        gains = [f"{ps[k]['gain']:+.2f}" for k in sorted(ps, key=int)]
+        macros.update({"GptRetestSessUnit": " and ".join(units), "GptRetestSessGain": " and ".join(gains)})
+    if dc:  # conservative bound: intervals across events, three per session (design effect up to sqrt 3)
+        u, c = per_unit(dc)
+        macros["GptCutLowDE"] = f"{u[1] - np.sqrt(3) * c[1]:.2f}"
+    # what a 10% cut from the cartel state earns against rivals that do not punish (analytic)
+    sys.path.insert(0, os.path.join(ROOT, "experiments"))
+    from fish_regression import br_slope  # noqa: E402
+    from kylecollusion.bertrand import logit_demand  # noqa: E402
+    from kylecollusion.llm_pricing import scaled_config  # noqa: E402
+    bc = scaled_config(1.0)
+
+    def prof(p0, p1):
+        q = logit_demand(np.array([[p0, p1]]), bc)[0]
+        return float((p0 - bc.cost) * q[0])
+    p0 = 1.81  # session 4's price
+    cut, sl = 0.9 * p0, br_slope(p0, 1.0)
+    base = sum(0.95 ** k * prof(p0, p0) for k in range(7))
+
+    def path(r1):
+        return prof(cut, p0) + sum(0.95 ** k * prof(p0, r1 if k == 1 else p0) for k in range(1, 7))
+    bench = {"none": (path(p0) - base) / b["pi_nash"], "best_response": (path(p0 - sl * (p0 - cut)) - base) / b["pi_nash"],
+             "match": (path(cut) - base) / b["pi_nash"], "slope": sl}
+    out["cut_benchmarks"] = bench
+    macros.update({"GptBenchNone": f"{bench['none']:+.2f}", "GptBenchBR": f"{bench['best_response']:+.2f}",
+                   "GptBenchMatch": f"{bench['match']:+.2f}", "GptBenchSlope": f"{sl:.2f}"})
+    # the same plan coding for the open models under the protocol
+    for tag, key in (("gptoss20b_duopoly_P1", "OssPOne"), ("gptoss20b_myopic_P1", "OssMyopic"),
+                     ("gptoss120b_duopoly_P1", "OssBig")):
+        d = load(tag)
+        if d is None:
+            continue
+        _, lp = texts(tag, d["args"]["periods"])
+        hits = [k for k, v in lp.items() if MATCH.search(v)]
+        out[f"plans_{tag}"] = {"match": len(hits), "plans": len(lp), "hits": [list(h) for h in sorted(hits)]}
+        macros.update({f"Gpt{key}MatchPlans": len(hits), f"Gpt{key}Plans": len(lp)})
     led = [json.loads(x) for x in open(os.path.join(ROOT, "results", "openai_spend.jsonl")) if x.strip()]
     cost = sum(x["cost"] for x in led if x.get("tag", "").startswith("gpt52_high_")
                and "pilot" not in x.get("tag", ""))  # main runs, their tests and the re-test
