@@ -58,6 +58,7 @@ def main(argv=None):
     ap.add_argument("--dev-horizon", type=int, default=8)
     ap.add_argument("--dev-cut", type=float, default=0.10, help="price cut for the visible deviation (0 skips it)")
     ap.add_argument("--dev-hike", type=float, default=0.0, help="price rise for an upward deviation (0 skips it)")
+    ap.add_argument("--no-br-test", action="store_true", help="skip the best-response deviation test")
     ap.add_argument("--gpu-mem", type=float, default=0.85)
     ap.add_argument("--dtype", default="auto")
     ap.add_argument("--attention-backend", default=None)
@@ -170,12 +171,13 @@ def main(argv=None):
           f"profit/Nash {res['summary']['profit_over_nash']:.3f}", flush=True)
     try:
         if a.dev_events > 0:
-            d = deviation_test(env, pricers, backend, events=a.dev_events, gap=a.dev_gap,
-                               horizon=a.dev_horizon, mode="best_response")
-            res["deviation"] = d
-            print("deviation (best response) rival aggression:", np.round(d["rival_aggression"], 3).tolist(),
-                  "gain", round(d["cum_gain_dev"], 3), flush=True)
-            save()
+            if not a.no_br_test:
+                d = deviation_test(env, pricers, backend, events=a.dev_events, gap=a.dev_gap,
+                                   horizon=a.dev_horizon, mode="best_response")
+                res["deviation"] = d
+                print("deviation (best response) rival aggression:", np.round(d["rival_aggression"], 3).tolist(),
+                      "gain", round(d["cum_gain_dev"], 3), flush=True)
+                save()
             if a.dev_cut > 0:
                 d = deviation_test(env, pricers, backend, events=a.dev_events, gap=a.dev_gap,
                                    horizon=a.dev_horizon, mode="cut", cut=a.dev_cut)

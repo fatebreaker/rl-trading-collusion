@@ -396,7 +396,11 @@ def deviation_test(env, pricers, backend, events: int = 3, gap: int = 5, horizon
             "rival_aggression": m, "rival_aggression_ci95": c,
             "deviation_size": float(dev_size.mean()),
             "cum_gain_dev": float(gains.mean()),
-            "cum_gain_dev_ci95": float(1.96 * gains.std(ddof=1) / np.sqrt(len(gains)))}
+            "cum_gain_dev_ci95": float(1.96 * gains.std(ddof=1) / np.sqrt(len(gains))),
+            # per event and session, for breakdowns: [event][lag][session] and [event][session]
+            "per_event": {"rival_aggression": np.round(agg, 4).tolist(),
+                          "deviation_size": np.round(dev_size, 4).tolist(),
+                          "gain": np.round((gain_t * (gamma ** np.arange(K))[None, :, None]).sum(1), 4).tolist()}}
 
 
 def trigger_instructions(bench: dict, tol_share: float = 0.25) -> str:

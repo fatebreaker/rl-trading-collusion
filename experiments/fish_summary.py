@@ -17,7 +17,8 @@ import numpy as np
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 RES = os.path.join(ROOT, "results", "llm_fish")
 PI_RATIO = 0.33749 / 0.22296  # monopoly / Nash profit
-MODELS = {"gptoss20b": ("gpt-oss-20b", "Oss"), "qwen3_32b": ("Qwen3-32B", "QwenBig")}
+MODELS = {"gptoss20b": ("gpt-oss-20b", "Oss"), "gptoss120b": ("gpt-oss-120b", "OssBig"),
+          "gpt52_high": ("GPT-5.2, high effort", "GptFive"), "qwen3_32b": ("Qwen3-32B", "QwenBig")}
 CONDS = {"duopoly_P1": ("P1", "POne"), "duopoly_P2": ("P2", "PTwo"),
          "myopic_P1": ("P1, myopic", "Myopic"), "duopoly_P1_k10": ("P1, prices $\\times10$", "Ten")}
 
@@ -52,6 +53,11 @@ def main():
             if dv:  # best-response deviation: raw response (fall in the rival's price, index units)
                 r.update(br_response=(dv["rival_aggression"][1], dv["rival_aggression_ci95"][1]),
                          br_size=dv["deviation_size"], gain=(dv["cum_gain_dev"], dv["cum_gain_dev_ci95"]))
+                if dv["deviation_size"] >= 0.1:  # a sizeable cut: response per unit, at lag 1 and summed
+                    u = dv["deviation_size"]
+                    H = min(6, len(dv["rival_aggression"]) - 1)
+                    r.update(br_per_unit=(dv["rival_aggression"][1] / u, dv["rival_aggression_ci95"][1] / u),
+                             br_per_unit_mean6=sum(dv["rival_aggression"][1:H + 1]) / H / u)
             dc = d.get("deviation_cut")
             if dc and dc["deviation_size"] >= 0.1:  # visible 10% cut: per unit of the cut
                 r.update(response=(dc["rival_aggression"][1] / dc["deviation_size"],
@@ -68,6 +74,11 @@ def main():
             if "br_response" in r:
                 macros[f"{key}BRResp"] = f"{r['br_response'][0]:.2f}\\pm{r['br_response'][1]:.2f}"
                 macros[f"{key}Gain"] = f"{r['gain'][0]:+.2f}\\pm{r['gain'][1]:.2f}"
+                macros[f"{key}BRSize"] = f"{r['br_size']:.2f}"
+            if "br_per_unit" in r:
+                macros[f"{key}BRUnit"] = f"{r['br_per_unit'][0]:.2f}\\pm{r['br_per_unit'][1]:.2f}"
+                macros[f"{key}BRUnitMean"] = f"{r['br_per_unit'][0]:.2f}"
+                macros[f"{key}BRUnitSix"] = f"{r['br_per_unit_mean6']:.2f}"
             if "response" in r:
                 macros[f"{key}Resp"] = f"{r['response'][0]:.2f}\\pm{r['response'][1]:.2f}"
                 macros[f"{key}CutGain"] = f"{r['cut_gain'][0]:+.2f}\\pm{r['cut_gain'][1]:.2f}"
@@ -81,12 +92,18 @@ def main():
         for k, v in macros.items():
             fh.write(f"\\newcommand{{\\{k}}}{{{v}}}\n")
     pm = lambda t, sgn="": "--" if t is None else f"${t[0]:{sgn}.2f}_{{\\pm{t[1]:.2f}}}$"  # noqa: E731
-    L = ["\\begin{tabular}{@{}llccccccc@{}}", "\\toprule",
-         " & & price & profit & \\multicolumn{2}{c}{best-response deviation} & $10\\%$ cut & on-path & best-resp. \\\\",
-         "\\cmidrule(lr){5-6}",
-         "Model & Prompt & index & index & rival & gain & rival per unit & coefficient & slope \\\\", "\\midrule"]
+    L = ["\\begin{tabular}{@{}llcccccccc@{}}", "\\toprule",
+         " & & price & profit & \\multicolumn{3}{c}{best-response deviation} & $10\\%$ cut & on-path & best-resp. \\\\",
+         "\\cmidrule(lr){5-7}",
+         "Model & Prompt & index & index & size & rival & gain & rival per unit & coefficient & slope \\\\",
+         "\\midrule"]
     for mname, cname, r in rows:
-        L.append(" & ".join([mname, cname, pm(r["index"]), pm(r["profit_index"]), pm(r.get("br_response")),
+        if "br_per_unit" in r:  # sizeable deviation: response per unit of the cut
+            br = pm(r["br_per_unit"]) + "$^\\ast$"
+        else:
+            br = pm(r.get("br_response"))
+        size = f"${r['br_size']:.2f}$" if "br_size" in r else "--"
+        L.append(" & ".join([mname, cname, pm(r["index"]), pm(r["profit_index"]), size, br,
                              pm(r.get("gain"), "+"), pm(r.get("response")), pm(r.get("delta")),
                              f"${r['br_slope']:.2f}$" if "br_slope" in r else "--"]) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]

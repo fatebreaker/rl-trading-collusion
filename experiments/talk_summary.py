@@ -28,12 +28,14 @@ RESTRAIN = re.compile(r"\b(limit|reduc|small|smaller|modest|moderate|cautious|ca
                       r"keep (it |orders? |our )?(low|small)|scale (back|down)|less)\b", re.I)
 AMPLIFY = re.compile(r"\b(buy|sell|increase|aggressive|capitaliz|maximi[sz]e|large|more)\b", re.I)
 THREAT = re.compile(r"punish|retaliat|\bif you\b.*\b(i will|i'll)\b|\bdefect|\bcheat|\bbetray|\bor else\b", re.I)
-NAMES = {"qwen3_8b_talk_monitor_su1": "QwenMon", "qwen3_8b_talk_su1": "Qwen", "mistral7b_talk_monitor_su1": "MistralMon"}
+NAMES = {"qwen3_8b_talk_monitor_su1": "QwenMon", "qwen3_8b_talk_su1": "Qwen", "mistral7b_talk_monitor_su1": "MistralMon",
+         "mistral7b_talk_monitor_su1_s1": "MistralMonSeedOne"}
 
 
 LABEL = {"qwen3_8b_talk_monitor_su1": ("Qwen3-8B", "orders shown"),
          "qwen3_8b_talk_su1": ("Qwen3-8B", "order flow only"),
-         "mistral7b_talk_monitor_su1": ("Mistral-7B", "orders shown")}
+         "mistral7b_talk_monitor_su1": ("Mistral-7B", "orders shown"),
+         "mistral7b_talk_monitor_su1_s1": ("Mistral-7B, seed 1", "orders shown")}
 
 
 def write_table(out):
@@ -94,7 +96,7 @@ def main():
                  examples_agree=agree[:: max(1, len(agree) // 6)][:6], examples_threat=threat[:6],
                  examples_any=nonempty[:: max(1, len(nonempty) // 8)][:8])
         out[tag] = r
-        nm = NAMES.get(tag, tag)
+        nm = NAMES.get(tag) or "".join(c for c in tag.title() if c.isalpha())  # macro names: letters only
         macros[f"Talk{nm}Delta"] = f"{r['delta']:.2f}"
         macros[f"Talk{nm}DeltaCI"] = f"{r['delta_ci95']:.2f}"
         macros[f"Talk{nm}Agree"] = f"{100 * r['share_agree']:.0f}"

@@ -71,7 +71,8 @@ V_WORD = re.compile(r"\bV\s*(?:is|=|of)?\s*(?:zero|neutral)\b", re.I)
 def zero_v(m: str) -> bool:
     """The message states V to be zero ("V is zero", "V = 0.00", "V is 0.")."""
     return bool(V_WORD.search(m)) or any(float(x) == 0 for x in V_NUM.findall(m))
-NAMES = {"qwen3_8b_talk_monitor_su1": "QwenMon", "qwen3_8b_talk_su1": "Qwen", "mistral7b_talk_monitor_su1": "MistralMon"}
+NAMES = {"qwen3_8b_talk_monitor_su1": "QwenMon", "qwen3_8b_talk_su1": "Qwen", "mistral7b_talk_monitor_su1": "MistralMon",
+         "mistral7b_talk_monitor_su1_s1": "MistralMonSeedOne"}
 
 
 def summarize(res):
@@ -82,7 +83,7 @@ def summarize(res):
         nz = [x for x in ok if not zero_v(x["message"])]
         r["rates_nonzero_v"] = {k: sum(x[k] for x in nz) / max(len(nz), 1) for k in LABELS}
         r["n_nonzero_v"] = len(nz)
-        nm = NAMES.get(tag, tag)
+        nm = NAMES.get(tag) or "".join(c for c in tag.title() if c.isalpha())  # macro names: letters only
         for k in ("coord", "restrain", "expand", "threat"):
             macros[f"TJ{nm}{k.capitalize()}"] = f"{100 * r['rates'][k]:.0f}"
             macros[f"TJ{nm}{k.capitalize()}NZ"] = f"{100 * r['rates_nonzero_v'][k]:.0f}"
