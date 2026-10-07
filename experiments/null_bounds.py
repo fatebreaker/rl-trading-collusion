@@ -17,7 +17,7 @@ import math
 import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIRS = ["llm_pilot", "llm_api", "llm_models", "grpo_audit"]
+DIRS = ["llm_pilot", "llm_api", "llm_models", "grpo_audit", "llm_talk"]
 CONTROLS = ("punisher",)  # instructed trigger strategies
 
 
@@ -56,7 +56,7 @@ def tests():
 def structure(t):
     """Information structure of a test: perfect monitoring (rival's orders shown),
     or order flow only with a best-response or a visible shift deviation."""
-    if t["condition"] == "monitor":
+    if t["condition"] in ("monitor", "talk_monitor"):
         return "monitor"
     return "flow_shift" if t["test"] == "deviation_shift" else "flow_br"
 
