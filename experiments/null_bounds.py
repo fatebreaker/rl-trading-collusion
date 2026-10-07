@@ -58,7 +58,8 @@ def tests():
                             "sigma_u": r["market"]["sigma_u"], "n_informed": r["market"].get("n_informed"),
                             "profit_over_nash": pn,
                             "n": t.get("n_events"),
-                            "mean": m, "ci": c, "cum_mean": cm, "cum_ci": cc, "cum_lags": H})
+                            "mean": m, "ci": c, "cum_mean": cm, "cum_ci": cc, "cum_lags": H,
+                            "gain": t.get("cum_gain_dev"), "gain_ci": t.get("cum_gain_dev_ci95")})
     return out
 
 
@@ -94,28 +95,42 @@ def random_effects(ts, floor):
 
 
 def write_table(null, groups, ctrl_eff, res, effect, re_all, cum):
-    """paper/table_nulls.tex: the pooled null by information structure and robustness subset."""
+    """paper/table_nulls.tex: the pooled null by information structure and robustness subset.
+    Chance is charged only to tests with sampling variance; "below" counts tests whose 95%
+    upper bound lies below the instructed traders' response with the rival's orders shown."""
     f3 = lambda x: f"{abs(x) if abs(x) < 5e-4 else x:.3f}"  # noqa: E731
     pm = lambda m, c: f"${f3(m)}\\pm{c:.3f}$"  # noqa: E731
-    mde_all = sorted(2.8 * t["ci"] / 1.96 for t in null)
-    rows = [("Rival's orders shown", groups["monitor"], f"{ctrl_eff.get('monitor', float('nan')):.2f}"),
-            ("Order flow, best-response deviation", groups["flow_br"], f"{ctrl_eff.get('flow_br', float('nan')):.2f}"),
-            ("Order flow, shift deviation", groups["flow_shift"], f"{ctrl_eff.get('flow_shift', float('nan')):.2f}")]
-    L = ["\\begin{tabular}{@{}lcccc@{}}", "\\toprule",
-         "Tests & $n$ & Significant & Pooled response & Median MDE \\\\", "\\midrule"]
-    for name, g, c in rows:
-        L.append(f"{name} (instructed: {c}) & {g['n']} & {g['sig_pos']} ({0.025 * g['n']:.1f}) & "
-                 f"{pm(g['re_pooled'], g['re_pooled_ci'])} & {g['median_mde80']:.2f} \\\\")
+    var = lambda ts: [t for t in ts if t["ci"] / 1.96 > 0.001]  # noqa: E731
+
+    def cells(ts, pooled, mde=True, key=("mean", "ci")):
+        m, c = key
+        nv = len(var(ts))
+        sig = sum(t[m] - t[c] > 0 for t in ts)
+        below = sum(t[m] + t[c] < (effect if m == "mean" else cum[3]) for t in ts)
+        md = sorted(2.8 * t[c] / 1.96 for t in ts)
+        return (f"{len(ts)} & {nv} & {sig} ({0.025 * nv:.1f}) & {below} & {pm(*pooled)} & "
+                + (f"{md[len(md) // 2]:.2f}" if mde else "--"))
+
+    st = {g: [t for t in null if structure(t) == g] for g in ("monitor", "flow_br", "flow_shift")}
+    files = {t["file"] for t in null}
+    indep = [t for t in null if not duplicate(t, files)]
+    above = [t for t in indep if t["profit_over_nash"] >= 1]
+    L = ["\\begin{tabular}{@{}lcccccc@{}}", "\\toprule",
+         "Tests & $n$ & with variance & Significant & Below instructed & Pooled response & Median MDE \\\\",
+         "\\midrule"]
+    for name, g, c in (("Rival's orders shown", "monitor", ctrl_eff.get("monitor")),
+                       ("Order flow, best-response deviation", "flow_br", ctrl_eff.get("flow_br")),
+                       ("Order flow, shift deviation", "flow_shift", ctrl_eff.get("flow_shift"))):
+        L.append(f"{name} (instructed: {c:.2f}) & "
+                 + cells(st[g], (groups[g]["re_pooled"], groups[g]["re_pooled_ci"])) + " \\\\")
     L.append("\\midrule")
-    L.append(f"All & {len(null)} & {len(res['sig_positive'])} ({0.025 * len(null):.1f}) & {pm(*re_all)} & "
-             f"{mde_all[len(mde_all) // 2]:.2f} \\\\")
-    L.append(f"Each run once, with sampling variance & {res['indep_var_n']} & {res['indep_sig']} "
-             f"({res['indep_expected']:.1f}) & {pm(res['indep_pooled'], res['indep_pooled_ci'])} & -- \\\\")
-    L.append(f"Agents earning at least Nash profit & {res['above_n']} & {res['above_sig']} ({0.025 * res['above_n']:.1f}) & "
-             f"{pm(res['above_pooled'], res['above_pooled_ci'])} & -- \\\\")
+    L.append("All & " + cells(null, re_all) + " \\\\")
+    L.append("Each run once & " + cells(indep, (res["indep_pooled"], res["indep_pooled_ci"]), mde=False) + " \\\\")
+    L.append("Agents earning at least Nash profit & "
+             + cells(above, (res["above_pooled"], res["above_pooled_ci"]), mde=False) + " \\\\")
     m_cum, c_cum, cum_sig, ctrl_cum = cum
-    L.append(f"Summed over six periods (instructed: {ctrl_cum:.2f}) & {len(null)} & {cum_sig} ({0.025 * len(null):.1f}) & "
-             f"{pm(m_cum, c_cum)} & -- \\\\")
+    L.append(f"Summed over six periods (instructed: {ctrl_cum:.2f}) & "
+             + cells(null, (m_cum, c_cum), mde=False, key=("cum_mean", "cum_ci")) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(ROOT, "paper", "table_nulls.tex"), "w").write("\n".join(L) + "\n")
 
@@ -190,11 +205,11 @@ def main():
     above = [t for t in indep if t["profit_over_nash"] >= 1]
     above_var = [t for t in above if t["ci"] / 1.96 > 0.001]
     m_ab, c_ab = random_effects(above_var, floor) if above_var else (float("nan"), float("nan"))
-    res.update(above_n=len(above), above_runs=len({t["file"] for t in above}),
+    res.update(above_n=len(above), above_var_n=len(above_var), above_runs=len({t["file"] for t in above}),
                above_sig=sum(t["mean"] - t["ci"] > 0 for t in above), above_pooled=m_ab, above_pooled_ci=c_ab,
                above_below_ctrl=sum(t["mean"] + t["ci"] < effect for t in above))
     json.dump({**res, "tests": null}, open(os.path.join(ROOT, "results", "null_bounds.json"), "w"), indent=1)
-    cols = ["file", "model", "condition", "sigma_u", "n_informed", "profit_over_nash", "test", "structure", "control", "n",
+    cols = ["file", "model", "condition", "sigma_u", "n_informed", "profit_over_nash", "test", "gain", "gain_ci", "structure", "control", "n",
             "mean", "ci", "cum_mean", "cum_ci", "cum_lags", "significant", "earlier_checkpoint"]
     with open(os.path.join(ROOT, "results", "deviation_tests.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
@@ -203,7 +218,7 @@ def main():
             w.writerow({**{k: t.get(k) for k in cols}, "structure": structure(t),
                         "significant": t["mean"] - t["ci"] > 0, "earlier_checkpoint": duplicate(t, files)})
     macros = {"NullTests": len(null), "NullSigPos": len(sig_pos),
-              "NullExpectedFP": f"{0.025 * len(null):.1f}",
+              "NullExpectedFP": f"{0.025 * sum(t['ci'] / 1.96 > 0.001 for t in null):.1f}",
               "NullBelowCtrl": len(below), "NullBelowHalf": len(half),
               "NullCtrlEffect": f"{effect:.2f}",
               "NullMedianUpper": f"{res['median_upper']:.3f}",
@@ -216,6 +231,9 @@ def main():
                        f"Null{nm}MDE": f"{r['median_mde80']:.2f}", f"Null{nm}BelowCtrl": r["below_ctrl"]})
     macros.update({"NullCumPooled": f"{abs(m_cum) if abs(m_cum) < 5e-4 else m_cum:.3f}",
                    "NullCumPooledCI": f"{c_cum:.3f}", "NullCumSig": cum_sig, "NullCtrlCum": f"{ctrl_cum:.2f}"})
+    br = [t for t in null if t["test"] == "deviation" and t.get("gain") is not None]
+    macros.update({"NullBRN": len(br), "NullGainPos": sum(t["gain"] > 0 for t in br),
+                   "NullGainSig": sum(t["gain"] - t["gain_ci"] > 0 for t in br)})
     macros.update({"NullIndepN": len(indep), "NullIndepVarN": len(var), "NullIndepSig": res["indep_sig"],
                    "NullIndepExpected": f"{res['indep_expected']:.1f}",
                    "NullIndepPooled": f"{abs(m_ind) if abs(m_ind) < 5e-4 else m_ind:.3f}",

@@ -64,7 +64,13 @@ def messages(raw: str) -> list[str]:
     return out
 
 
-ZERO_V = re.compile(r"\bV\s*(is|=|of)?\s*[+-]?(0(\.0+)?\b|zero|neutral)", re.I)  # "V is zero", "V=0.00"
+V_NUM = re.compile(r"\bV\s*(?:is|=|of)?\s*([+-]?\d*\.?\d+)", re.I)
+V_WORD = re.compile(r"\bV\s*(?:is|=|of)?\s*(?:zero|neutral)\b", re.I)
+
+
+def zero_v(m: str) -> bool:
+    """The message states V to be zero ("V is zero", "V = 0.00", "V is 0.")."""
+    return bool(V_WORD.search(m)) or any(float(x) == 0 for x in V_NUM.findall(m))
 NAMES = {"qwen3_8b_talk_monitor_su1": "QwenMon", "qwen3_8b_talk_su1": "Qwen", "mistral7b_talk_monitor_su1": "MistralMon"}
 
 
@@ -73,7 +79,7 @@ def summarize(res):
     macros = {}
     for tag, r in res.items():
         ok = [x for x in r["items"] if not x["failed"]]
-        nz = [x for x in ok if not ZERO_V.search(x["message"])]
+        nz = [x for x in ok if not zero_v(x["message"])]
         r["rates_nonzero_v"] = {k: sum(x[k] for x in nz) / max(len(nz), 1) for k in LABELS}
         r["n_nonzero_v"] = len(nz)
         nm = NAMES.get(tag, tag)

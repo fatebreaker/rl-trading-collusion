@@ -44,7 +44,7 @@ def write_table(out):
     L = ["\\begin{tabular}{@{}llccccccc@{}}", "\\toprule",
          " & & & rival & gain & \\multicolumn{4}{c}{messages, judge (\\%)} \\\\",
          "\\cmidrule(lr){6-9}",
-         "Traders & Rival's orders & $\\Delta$ & response & from BR & together & more & less & threat \\\\",
+         "Traders & Rival's orders & $\\Delta$ & response & from BR & together & more & less & threat/cond. \\\\",
          "\\midrule"]
     for tag in LABEL:
         r = out.get(tag)
