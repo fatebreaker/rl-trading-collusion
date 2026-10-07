@@ -37,6 +37,10 @@ def tests():
             if not isinstance(r, dict) or "market" not in r:
                 continue
             control = any(c in r.get("condition", "") for c in CONTROLS)
+            # profit relative to the stage Nash profit: a cartel-like state has something to protect
+            fb = r["bench_fixed"] if r["market"].get("mm_fixed", True) else r["bench"]
+            prof = r.get("per_session", {}).get("profit")
+            pn = float(sum(prof) / len(prof) / fb["profit_nash"]) if prof else float("nan")
             for key in ("deviation", "deviation_shift"):
                 t = r.get(key)
                 if not t or len(t.get("d_beta_rival", [])) < 2:
@@ -52,6 +56,7 @@ def tests():
                 out.append({"file": f"{d}/{name}", "test": key, "control": control,
                             "condition": r.get("condition"), "model": r.get("model", "").split("/")[-1],
                             "sigma_u": r["market"]["sigma_u"], "n_informed": r["market"].get("n_informed"),
+                            "profit_over_nash": pn,
                             "n": t.get("n_events"),
                             "mean": m, "ci": c, "cum_mean": cm, "cum_ci": cc, "cum_lags": H})
     return out
@@ -154,8 +159,15 @@ def main():
     m_ind, c_ind = random_effects(var, floor)
     res.update(indep_n=len(indep), indep_var_n=len(var), indep_sig=sum(t["mean"] - t["ci"] > 0 for t in indep),
                indep_expected=0.025 * len(var), indep_pooled=m_ind, indep_pooled_ci=c_ind)
+    # tests where the agents earn at least the Nash profit, i.e. have a cartel to protect
+    above = [t for t in indep if t["profit_over_nash"] >= 1]
+    above_var = [t for t in above if t["ci"] / 1.96 > 0.001]
+    m_ab, c_ab = random_effects(above_var, floor) if above_var else (float("nan"), float("nan"))
+    res.update(above_n=len(above), above_runs=len({t["file"] for t in above}),
+               above_sig=sum(t["mean"] - t["ci"] > 0 for t in above), above_pooled=m_ab, above_pooled_ci=c_ab,
+               above_below_ctrl=sum(t["mean"] + t["ci"] < effect for t in above))
     json.dump({**res, "tests": null}, open(os.path.join(ROOT, "results", "null_bounds.json"), "w"), indent=1)
-    cols = ["file", "model", "condition", "sigma_u", "n_informed", "test", "structure", "control", "n",
+    cols = ["file", "model", "condition", "sigma_u", "n_informed", "profit_over_nash", "test", "structure", "control", "n",
             "mean", "ci", "cum_mean", "cum_ci", "cum_lags", "significant", "earlier_checkpoint"]
     with open(os.path.join(ROOT, "results", "deviation_tests.csv"), "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=cols)
@@ -180,7 +192,10 @@ def main():
     macros.update({"NullIndepN": len(indep), "NullIndepVarN": len(var), "NullIndepSig": res["indep_sig"],
                    "NullIndepExpected": f"{res['indep_expected']:.1f}",
                    "NullIndepPooled": f"{abs(m_ind) if abs(m_ind) < 5e-4 else m_ind:.3f}",
-                   "NullIndepPooledCI": f"{c_ind:.3f}"})
+                   "NullIndepPooledCI": f"{c_ind:.3f}",
+                   "NullAboveN": len(above), "NullAboveRuns": res["above_runs"], "NullAboveSig": res["above_sig"],
+                   "NullAbovePooled": f"{abs(m_ab) if abs(m_ab) < 5e-4 else m_ab:.3f}",
+                   "NullAbovePooledCI": f"{c_ab:.3f}", "NullAboveBelowCtrl": res["above_below_ctrl"]})
     macros.update({"NullCtrlFlow": f"{ctrl_eff.get('flow_br', float('nan')):.2f}",
                    "NullCtrlShift": f"{ctrl_eff.get('monitor_shift', float('nan')):.2f}"})
     with open(os.path.join(ROOT, "paper", "numbers_nulls.tex"), "w") as fh:

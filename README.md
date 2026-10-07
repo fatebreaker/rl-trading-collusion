@@ -6,7 +6,9 @@ the threat of punishment) or an artefact of how agents decide and learn. The
 audit (paired deviation tests with shared sampling seeds, placebos, scale
 sweeps, positive controls) is applied to tabular Q-learners, ten LLMs trading
 in context (seven open-weight models and three OpenAI models, with and without
-reasoning) and LLMs trained by GRPO in self-play.
+reasoning) and LLMs trained by GRPO in self-play, and to LLM pricing agents in a
+logit-Bertrand game, including a re-run of the protocol of Fish et al. with
+gpt-oss-20b.
 
 - **Paper (ACL format):** `paper/main_acl.tex`, built by `paper/build_acl.sh`.
   A longer journal version is `paper/main_rfs.tex`; `paper/main_v2.tex` is the
@@ -41,10 +43,20 @@ an OpenAI API key (`OPENAI_API_KEY`) for the hosted models; see `REPLICATION.md`
 - Model coverage and robustness: `experiments/llm_models.sh` (depth test for
   one open-weight model), `llm_r1.sh` (DeepSeek-R1-Distill), `llm_gpt55.sh`
   (GPT-5.5, flex tier), `llm_prompts.sh` (two more prompt wordings).
+- Pricing agents: `src/kylecollusion/llm_pricing.py` (our prompt, and the
+  prompts of Fish et al. quoted verbatim), `experiments/llm_bertrand.py` and
+  `llm_bertrand.sh`; summaries `pricing_summary.py`, `fish_summary.py`, and
+  `fish_regression.py` (their on-path regression against the best-response
+  slope).
+- Cheap talk (`llm_pilot.py --condition talk_monitor`), the price rule
+  disclosed (`llm_disclose.sh`) and A/A tests of the seed pairing
+  (`llm_pilot.py --aa-test`); summaries `talk_summary.py`, `talk_judge.py`,
+  `disclose_summary.py`, `aa_summary.py`.
 - What traders write: `experiments/trace_analysis.py` (keyword coding),
   `trace_judge.py` (LLM judge), `annotation_ai_judge.py` and
   `annotation_agreement.py` (cross-check of the judge on a 200-item sample);
-  `null_bounds.py` pools the rival responses of all deviation tests.
+  `null_bounds.py` pools the rival responses of all deviation tests and lists
+  them in `results/deviation_tests.csv`.
 
 ## Main ideas
 

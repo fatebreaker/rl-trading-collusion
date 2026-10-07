@@ -202,12 +202,14 @@ def evaluate(env, agent, s, periods=1000):
     return prof / n, price / n, s
 
 
-def deviation_response(env, agent, s, horizon=15, deviator=0):
+def deviation_response(env, agent, s, horizon=15, deviator=0, hike=0.0):
     """Calvano impulse response: from the greedy path, firm `deviator` plays
     its static best response to the rival's current greedy price for one
-    period; then both follow their strategies. Paired with an undeviated copy.
-    Returns per-lag mean price changes for deviator and rival (deviated minus
-    baseline) and the deviator's discounted profit gain."""
+    period (or, with hike > 0, the grid price nearest to its own price times
+    1 + hike, the upward deviation of Epivent and Lambin); then both follow
+    their strategies. Paired with an undeviated copy. Returns per-lag mean
+    price changes for deviator and rival (deviated minus baseline) and the
+    deviator's discounted profit gain."""
     rival = 1 - deviator
     e_dev = copy.deepcopy(env)
     s_b, s_d = s.copy(), s.copy()
@@ -220,8 +222,12 @@ def deviation_response(env, agent, s, horizon=15, deviator=0):
         a_d = agent.act(s_d, 0, greedy=True)
         if k == 0:
             # static best response to rival's price in the deviating copy
-            pay = env.payoff[:, a_d[:, rival], deviator] if deviator == 0 else env.payoff[a_d[:, rival], :, deviator].T
-            br = pay.argmax(0)
+            if hike > 0:
+                target = env.grid[a_d[:, deviator]] * (1 + hike)
+                br = np.abs(env.grid[None, :] - target[:, None]).argmin(1)
+            else:
+                pay = env.payoff[:, a_d[:, rival], deviator] if deviator == 0 else env.payoff[a_d[:, rival], :, deviator].T
+                br = pay.argmax(0)
             a_d = a_d.copy()
             a_d[:, deviator] = br
             deviated = br != a_b[:, deviator]

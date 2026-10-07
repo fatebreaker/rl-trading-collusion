@@ -56,6 +56,7 @@ def main(argv=None):
     ap.add_argument("--dev-gap", type=int, default=5)
     ap.add_argument("--dev-horizon", type=int, default=8)
     ap.add_argument("--dev-cut", type=float, default=0.10, help="price cut for the visible deviation (0 skips it)")
+    ap.add_argument("--dev-hike", type=float, default=0.0, help="price rise for an upward deviation (0 skips it)")
     ap.add_argument("--gpu-mem", type=float, default=0.85)
     ap.add_argument("--dtype", default="auto")
     ap.add_argument("--attention-backend", default=None)
@@ -169,6 +170,13 @@ def main(argv=None):
                                    horizon=a.dev_horizon, mode="cut", cut=a.dev_cut)
                 res["deviation_cut"] = d
                 print("deviation (cut) rival aggression:", np.round(d["rival_aggression"], 3).tolist(),
+                      "gain", round(d["cum_gain_dev"], 3), flush=True)
+                save()
+            if a.dev_hike > 0:
+                d = deviation_test(env, pricers, backend, events=a.dev_events, gap=a.dev_gap,
+                                   horizon=a.dev_horizon, mode="hike", cut=a.dev_hike)
+                res["deviation_hike"] = d
+                print("deviation (hike) rival aggression:", np.round(d["rival_aggression"], 3).tolist(),
                       "gain", round(d["cum_gain_dev"], 3), flush=True)
     except BudgetExceeded as e:
         res["deviation_error"] = str(e)

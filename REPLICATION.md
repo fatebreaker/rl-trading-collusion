@@ -6,8 +6,10 @@ Structure follows the Social Science Data Editors template (README v1.1).
 
 The code simulates a repeated Kyle (1985) market with three classes of
 learning traders (tabular Q-learning, language models trading in context, and
-language models trained by reinforcement learning), runs the audit (paired
-deviation tests, placebos, depth sweep, positive controls), and builds every
+language models trained by reinforcement learning) and a logit-Bertrand pricing
+game with LLM pricing agents (our prompt and the protocol of Fish et al.), runs
+the audit (paired deviation tests, placebos, scale sweeps, positive controls),
+and builds every
 table and figure of `paper/main_acl.tex` (and of the longer versions
 `paper/main_rfs.tex` and `paper/main_v2.tex`). All results are simulated; no external
 data are used. Running everything from scratch takes a few hundred
@@ -22,9 +24,11 @@ outputs are the only "data" that cannot be regenerated exactly:
 
 - Open-weight models run locally with fixed sampling seeds: Qwen3-0.6B/1.7B/4B/8B
   and Qwen3-32B-AWQ (`Qwen/Qwen3-*`), `microsoft/phi-4`,
-  `allenai/OLMo-2-1124-13B-Instruct`, `mistralai/Mistral-7B-Instruct-v0.3` and
-  `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`. Regeneration is exact up to GPU
-  non-determinism in batched generation.
+  `allenai/OLMo-2-1124-13B-Instruct`, `mistralai/Mistral-7B-Instruct-v0.3`,
+  `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B` and `openai/gpt-oss-20b`.
+  Regeneration is exact up to GPU non-determinism in batched generation (an
+  A/A test, `results/aa_test`, measures it: 98% of paired vLLM responses are
+  identical).
 - OpenAI models (GPT-5.4-nano, GPT-5.4-mini) are proprietary and accessed
   through the paid API. Round-1 runs called the model aliases `gpt-5.4-nano`
   and `gpt-5.4-mini` (October 2026); round-2 runs pin the snapshots
@@ -32,7 +36,7 @@ outputs are the only "data" that cannot be regenerated exactly:
   ids the API reports. GPT-5.5 runs pin `gpt-5.5-2026-04-23` and use the
   flex service tier (half price). The API honours seeds only approximately, so
   reruns reproduce results in distribution, not exactly. Cost of a full rerun
-  of the API experiments, including the judge: about USD 120 at October 2026
+  of the API experiments, including the judges: about USD 135 at October 2026
   prices (per-call ledger: `results/openai_spend.jsonl`).
 - Raw responses: round-2 runs save every response
   (`results/llm_*/*_raw.jsonl.gz`); round-1 runs saved the full order paths and
@@ -68,12 +72,21 @@ outputs are the only "data" that cannot be regenerated exactly:
   deviation test with shared sampling seeds (`llm_traders.py`), GRPO training
   (`grpo.py`), Bertrand and dealer validation markets (`bertrand.py`,
   `quotes.py`).
+- `src/kylecollusion/llm_pricing.py`: LLM pricing agents in the logit-Bertrand
+  duopoly, with our prompt or the prompts of Fish et al. (EC'26) quoted
+  verbatim (prefixes P0/P1/P2, plans and insights files, 100-round history),
+  and the paired deviation tests (best response and a 10% price cut).
 - `experiments/`: Q-learning sweeps (`run_all.sh`, `grids/`, `exp*.sh`,
   `mechanism.py`, `rare_states.py`, `bertrand_validation.py`,
-  `sustain_curves.py`); language-model conditions (`llm_pilot.py` runs one
-  condition; `llm_*.sh` reproduce each batch); GRPO (`grpo_train.py`,
-  `grpo_audit.sh`); monitoring and quick tables (`status.py`,
-  `llm_tabulate.py`).
+  `sustain_curves.py`); language-model traders (`llm_pilot.py` runs one
+  condition, including `talk`/`talk_monitor` for cheap talk, `--disclose-rule`
+  and `--aa-test`; `llm_*.sh` reproduce each batch); pricing agents
+  (`llm_bertrand.py`, `llm_bertrand.sh`; `--style fish --prefix P1` for the
+  protocol of Fish et al.); GRPO (`grpo_train.py`, `grpo_audit.sh`); summaries
+  that write the tables and quoted numbers (`*_summary.py`, `null_bounds.py`,
+  `fish_regression.py`, `prompt_sensitivity.py`, `dou_lownoise.py`); judges
+  (`trace_judge.py`, `talk_judge.py`, `annotation_*.py`); monitoring
+  (`status.py`, `llm_tabulate.py`).
 - `tests/`: unit tests, including scripted traders that validate the deviation
   tests (`pytest`, about 1 minute).
 
@@ -90,8 +103,42 @@ outputs are the only "data" that cannot be regenerated exactly:
    `llm_api_round2.sh` (need `OPENAI_API_KEY`; spending is capped in
    `OpenAIBackend`); GRPO `experiments/grpo_train.py` with the arguments stored
    in each run's `results/grpo/<run>/config.json`, then `grpo_audit.sh`.
+   Pricing agents: `experiments/llm_bertrand.sh <gpu> <model> <tag>
+   "duopoly:1 duopoly:10 myopic:1 trigger:1"`; the protocol of Fish et al.:
+   `experiments/llm_bertrand.py --style fish --prefix P1 --model
+   openai/gpt-oss-20b --sessions 20 --periods 150 --max-tokens 6000
+   --max-model-len 20000 --condition duopoly` (also `--prefix P2`,
+   `--condition myopic`, `--scale 10`, and `--condition solo` for the
+   competence screen). Cheap talk: `experiments/llm_pilot.py --condition
+   talk_monitor --sigma-u 1 --sessions 40 --periods 200` (or `talk`). Price
+   rule disclosed: `experiments/llm_disclose.sh`. A/A tests:
+   `experiments/llm_pilot.py --aa-test`. Every run stores its full arguments in
+   its JSON output.
+4. Every deviation test pooled in the paper is listed, with its run, model,
+   condition, depth, information structure and estimate, in
+   `results/deviation_tests.csv` (written by `experiments/null_bounds.py`).
 
 ## List of tables and figures
+
+ACL version (`paper/main_acl.tex`; all built by `paper/build_acl.sh`):
+
+| Exhibit | Program | Inputs |
+|---|---|---|
+| Fig. 1 (`fig_teaser`), Fig. 3 (`fig_tests`), Fig. 4 (`fig_depth`), Fig. 5 (`fig_rl`), appendix figures (`fig_lags`, `fig_app_depth`, `fig_app_rl_control`, `fig_app_mechanism`) | `paper/make_acl_figures.py` | `results/llm_*`, `results/grpo_audit`, `results/exp5_controls`, `results/bertrand`, `results/mechanism`, `results/pricing_summary.json`, `results/fish_regression.json`, `results/null_bounds.json` |
+| Fig. 2 (overview) | TikZ in `paper/acl_sections/fig_overview.tex` | none |
+| Table 1 (`table_audit`) | `paper/make_acl_tables.py` | as Fig. 1 |
+| Table 2 (`table_prompts`) | `experiments/prompt_sensitivity.py` | `results/llm_pilot`, `results/llm_prompts`, `results/llm_models`, `results/llm_disclose` |
+| Table 3 (models) | written in `paper/acl_sections/appendix.tex` | run arguments in each JSON |
+| Tables 4, 6, 7 (`table_drivers_acl`, `table_middepth`, `table_llm`) | `paper/make_llm_tables.py` | `results/llm_pilot`, `results/llm_api`, `results/llm_models`, `results/llm_talk`, `results/grpo_audit` |
+| Table 5 (`table_models`) | `paper/make_acl_models.py` | `results/llm_models`, `results/llm_api`, `results/llm_pilot` |
+| Table 8 (`table_pricing`) | `experiments/pricing_summary.py` (after `fish_regression.py`) | `results/llm_bertrand` |
+| Table 9 (`table_fish`) | `experiments/fish_summary.py`, `experiments/fish_regression.py` | `results/llm_fish` |
+| Table 10 (`table_traces`) | `paper/make_trace_table.py` | `results/trace_judge.json`, raw responses |
+| Table 11 (`table_annotation`) | `experiments/annotation_agreement.py` | `results/annotation_*.json` |
+| Table 12 (`table_talk`) | `experiments/talk_summary.py` (after `talk_judge.py`) | `results/llm_talk`, `results/talk_judge.json` |
+| Numbers quoted in the text (`paper/numbers_*.tex`) | the scripts above, plus `null_bounds.py`, `aa_summary.py`, `disclose_summary.py`, `dou_lownoise.py`, `escalation_summary.py` | as above |
+
+Longer versions:
 
 | Exhibit | Program | Inputs |
 |---|---|---|

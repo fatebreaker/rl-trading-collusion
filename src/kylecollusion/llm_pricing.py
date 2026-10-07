@@ -353,8 +353,8 @@ def deviation_test(env, pricers, backend, events: int = 3, gap: int = 5, horizon
                    deviator: int = 0, gamma: float = 0.95, mode: str = "best_response",
                    cut: float = 0.10) -> dict:
     """Paired deviation test. In a clone of the market, `deviator` deviates for
-    one period (best response to the rival's current price, or a price cut of
-    `cut` x its own price); both copies then continue for `horizon` periods with
+    one period (best response to the rival's current price, or a price cut or,
+    with mode "hike", a price rise of `cut` x its own price); both copies then continue for `horizon` periods with
     shared sampling seeds. Reports the rival's aggression (the fall in its price
     in the clone, in units of p_mono - p_Nash) and the deviator's discounted
     profit gain (in units of the Nash profit)."""
@@ -373,6 +373,8 @@ def deviation_test(env, pricers, backend, events: int = 3, gap: int = 5, horizon
             if k == 0:
                 if mode == "cut":
                     pd[:, deviator] = pd[:, deviator] * (1 - cut)
+                elif mode == "hike":  # upward deviation (Epivent and Lambin)
+                    pd[:, deviator] = pd[:, deviator] * (1 + cut)
                 else:
                     pd[:, deviator] = best_response(pd[:, rival], e_d.bcfg)
                 dev_size[r] = (pb[:, deviator] - pd[:, deviator]) / span
