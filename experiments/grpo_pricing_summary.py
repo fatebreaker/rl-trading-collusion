@@ -27,7 +27,7 @@ MIN_CUT = 0.1  # smallest mean deviation (index units) for a response per unit
 RUNS = {"pricing_0p6b_g09": ("Qwen3-0.6B", 0.9, "SmallFwd"), "pricing_0p6b_g0": ("Qwen3-0.6B", 0.0, "SmallMyo"),
         "pricing_1p7b_g09": ("Qwen3-1.7B", 0.9, "MidFwd"), "pricing_1p7b_g0": ("Qwen3-1.7B", 0.0, "MidMyo")}
 FIELDS = ("Idx", "IdxCI", "Prof", "ProfIdx", "BRSize", "BRUnit", "BRBench", "Gain", "CutUnit", "CutBench",
-          "CutGain", "TenIdx", "Anchor", "TrainIdx", "TrainProf", "Iters")
+          "CutGain", "TenIdx", "TenProf", "Anchor", "Markup", "TenMarkup", "TrainIdx", "TrainProf", "Iters")
 
 
 def tci(a):
@@ -61,6 +61,8 @@ def main():
             bench = benchmarks(P, k)
             idx = tci(d["per_session"]["index"])
             prof = tci(d["per_session"]["profit_over_nash"])
+            half = P[:, P.shape[1] // 2:]  # markup over cost in the second half of each session
+            r["markup"] = float(half.mean() - d["bench"]["cost"])
             r.update(audit=os.path.relpath(f1, ROOT), index=idx, profit_over_nash=prof,
                      profit_index=((prof[0] - 1) / (pi_ratio - 1), prof[1] / (pi_ratio - 1)), bench=bench,
                      parse_fail=d["parse_fail_rate"])
@@ -81,7 +83,10 @@ def main():
             f10 = f1.replace("_duopoly_k1.json", "_duopoly_k10.json")
             if os.path.exists(f10) and os.path.getsize(f10) > 0:
                 d10 = json.load(open(f10))
+                P10 = np.asarray(d10["prices_sessions"], float)
+                r["markup_k10"] = float(P10[:, P10.shape[1] // 2:].mean() - d10["bench"]["cost"])
                 r["index_k10"] = tci(d10["per_session"]["index"])
+                r["profit_k10"] = tci(d10["per_session"]["profit_over_nash"])
                 r["anchoring"] = bool(abs(idx[0] - r["index_k10"][0]) > np.hypot(idx[1], r["index_k10"][1]))
         out[run] = r
         m = {f: "--" for f in FIELDS}
@@ -100,9 +105,12 @@ def main():
             m.update(CutUnit=f"{r['cut']['per_unit'][0]:.2f}\\pm{r['cut']['per_unit'][1]:.2f}",
                      CutGain=f"{r['cut']['gain'][0]:+.2f}\\pm{r['cut']['gain'][1]:.2f}")
         if "index_k10" in r:
-            m.update(TenIdx=f"{r['index_k10'][0]:.2f}", Anchor="yes" if r["anchoring"] else "no")
+            m.update(TenIdx=f"{r['index_k10'][0]:.2f}", Anchor="yes" if r["anchoring"] else "no",
+                     TenMarkup=f"{r['markup_k10']:.2f}", TenProf=f"{r['profit_k10'][0]:.2f}")
+        if "markup" in r:
+            m["Markup"] = f"{r['markup']:.2f}"
         for f, v in m.items():
-            macros[f"GrpoPr{key}{f}"] = v
+            macros[f"GrpoPr{key}{f}"] = v[1:] if v.startswith("-0.00") else v  # no "-0.00"
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_grpopricing.tex"), "w") as fh:
