@@ -1,8 +1,10 @@
 """Agreement between human labels and the LLM judge (and the two AI coders) on the
-100-item sample (results/annotation_items_100.json). Human labels are CSV files
-results/annotation_human/labels_<annotator>.csv with columns item_id and one 0/1
-column per question. Writes results/annotation_human/agreement.json and
-paper/numbers_human.tex.
+100-item sample (results/annotation_items_100.json), and between the two human
+annotators (a1: an author; a2: a colleague who is not an author, unpaid, who labelled
+independently). Human labels are CSV files results/annotation_human/labels_<annotator>.csv
+with columns item_id and one 0/1 column per question. Agreement with the model coders is
+pooled over annotators (each annotator-item pair is one comparison). Writes
+results/annotation_human/agreement.json, paper/numbers_human.tex and paper/table_human.tex.
 
     python experiments/human_agreement.py
 """
@@ -92,36 +94,62 @@ def main():
         macros[f"HumPos{nm}"] = sum(hj)
     # cooperation and punishment by condition: the claims rest on uninstructed responses
     full = {x["id"]: x for x in json.load(open(os.path.join(ROOT, "results", "annotation_key.json")))}
-    h0 = humans[sorted(humans)[0]]
+    order = sorted(humans)
+    h0 = humans[order[0]]
     ins = [i for i in h0 if full[i]["instructed"]]
     uns = [i for i in h0 if not full[i]["instructed"]]
     macros.update({"HumInsN": len(ins), "HumUnsN": len(uns)})
     for q, nm in (("coop", "Coop"), ("punish", "Pun")):
-        macros[f"HumIns{nm}"] = sum(h0[i][q] for i in ins)
-        macros[f"HumUns{nm}"] = sum(h0[i][q] for i in uns)
+        for k, h in enumerate(order):  # first annotator without suffix, second with "B"
+            sfx = "" if k == 0 else "B"
+            macros[f"HumIns{nm}{sfx}"] = sum(humans[h][i][q] for i in ins if i in humans[h])
+            macros[f"HumUns{nm}{sfx}"] = sum(humans[h][i][q] for i in uns if i in humans[h])
         macros[f"HumUnsJudge{nm}"] = sum(bool(full[i]["judge"].get(q)) for i in uns)
-        res[q]["uninstructed_human_pos"] = macros[f"HumUns{nm}"]
+        res[q]["uninstructed_human_pos"] = {h: sum(humans[h][i][q] for i in uns if i in humans[h]) for h in order}
+        for k, h in enumerate(order):  # the judge's recall against each annotator
+            pos = [i for i in humans[h] if humans[h][i][q] and i in key]
+            res[q].setdefault("recall_by_annotator", {})[h] = sum(bool(key[i].get(q)) for i in pos) / max(len(pos), 1)
     for q in QS:
         nm = NAMES[q]
         macros[f"HumKappaOpus{nm}"] = f"{res[q]['kappa_opus']:.2f}"
         macros[f"HumKappaGpt{nm}"] = f"{res[q]['kappa_gpt55']:.2f}"
-    if len(humans) >= 2:  # agreement between two human annotators
-        a, b = list(humans)[:2]
+    ai_k = [res[q][k] for q in QS if q != "half" for k in ("kappa_opus", "kappa_gpt55")]  # stronger models
+    macros.update({"HumAIKappaMin": f"{min(ai_k):.2f}", "HumAIKappaMax": f"{max(ai_k):.2f}"})
+    if len(humans) >= 2:  # agreement between the two human annotators
+        a, b = order[:2]
         common = sorted(set(humans[a]) & set(humans[b]))
+        ks = []
         for q in QS:
-            k = kappa([humans[a][i][q] for i in common], [humans[b][i][q] for i in common])
+            x, y = [humans[a][i][q] for i in common], [humans[b][i][q] for i in common]
+            k = kappa(x, y)
             res[q]["kappa_humans"] = k
+            res[q]["agree_humans"] = sum(u == v for u, v in zip(x, y))
+            res[q]["positives"] = {a: sum(x), b: sum(y)}
             macros[f"HumHumKappa{NAMES[q]}"] = f"{k:.2f}"
+            macros[f"HumHumAgree{NAMES[q]}"] = res[q]["agree_humans"]
+            if min(sum(x), sum(y)) >= 5:  # kappa is uninformative for labels almost never used
+                ks.append(k)
+            if q in ("coop", "punish"):
+                d = [i for i in common if humans[a][i][q] != humans[b][i][q]]
+                macros[f"HumHumDiff{NAMES[q]}"] = len(d)
+                macros[f"HumHumDiffIns{NAMES[q]}"] = sum(full[i]["instructed"] for i in d)
+        macros.update({"HumHumKappaMin": f"{min(ks):.2f}", "HumHumKappaMax": f"{max(ks):.2f}", "HumHumN": len(common)})
     json.dump(res, open(os.path.join(ROOT, "results", "annotation_human", "agreement.json"), "w"), indent=1)
     label = {"impact": "Price impact", "rival_flow": "Rival as flow", "rival_infer": "Infers rival",
              "coop": "Cooperation", "punish": "Punishment", "half": "Scales down"}
-    L = ["\\begin{tabular}{@{}lcccccc@{}}", "\\toprule",
-         " & Human & \\multicolumn{3}{c}{Cohen's $\\kappa$ with the human} & \\multicolumn{2}{c}{Judge vs.\\ human} \\\\",
-         "\\cmidrule(lr){3-5}\\cmidrule(lr){6-7}",
-         "Question & positives & J & O & G & recall & precision \\\\", "\\midrule"]
+    two = len(humans) >= 2
+    L = ["\\begin{tabular}{@{}lccccccc@{}}" if two else "\\begin{tabular}{@{}lcccccc@{}}", "\\toprule",
+         (" & Human & Humans & \\multicolumn{3}{c}{$\\kappa$ with the humans} & \\multicolumn{2}{c}{Judge vs.\\ humans} \\\\"
+          if two else
+          " & Human & \\multicolumn{3}{c}{Cohen's $\\kappa$ with the human} & \\multicolumn{2}{c}{Judge vs.\\ human} \\\\"),
+         "\\cmidrule(lr){4-6}\\cmidrule(lr){7-8}" if two else "\\cmidrule(lr){3-5}\\cmidrule(lr){6-7}",
+         ("Question & positives & $\\kappa$ & J & O & G & recall & precision \\\\" if two
+          else "Question & positives & J & O & G & recall & precision \\\\"), "\\midrule"]
     for q in QS:
         r = res[q]
-        L.append(f"{label[q]} & {r['human_pos']} & {r['kappa_judge']:.2f} & {r['kappa_opus']:.2f} & "
+        pos = " / ".join(str(r["positives"][h]) for h in order[:2]) if two else str(r["human_pos"])
+        hh = f" & {r['kappa_humans']:.2f}" if two else ""
+        L.append(f"{label[q]} & {pos}{hh} & {r['kappa_judge']:.2f} & {r['kappa_opus']:.2f} & "
                  f"{r['kappa_gpt55']:.2f} & {r['recall'][0]:.2f} & {r['precision'][0]:.2f} \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(ROOT, "paper", "table_human.tex"), "w").write("\n".join(L) + "\n")
