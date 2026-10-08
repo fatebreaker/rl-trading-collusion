@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from kylecollusion.llm_pricing import (LLMPricers, PricingConfig, PricingMarket,  # noqa: E402
                                        deviation_test, parse_fish, parse_price)
-from kylecollusion.llm_traders import OpenAIBackend  # noqa: E402
+from kylecollusion.llm_traders import BudgetExceeded, OpenAIBackend  # noqa: E402
 
 
 def rebuild(run: dict, raw_path: str, sessions: list[int], objective: str | None = None):
@@ -107,26 +107,42 @@ def main(argv=None):
                             service_tier=ra.get("service_tier"),
                             max_completion_tokens=ra.get("max_tokens") or 4000)
     pricers.raw = []
-    d = deviation_test(env, pricers, backend, events=a.events, gap=a.gap, horizon=a.horizon,
-                       mode=a.mode, cut=a.cut)
-    agg = np.asarray(d["per_event"]["rival_aggression"])  # (events, lags, sessions)
-    size = np.asarray(d["per_event"]["deviation_size"])   # (events, sessions)
-    per_session = {}
-    for k, s in enumerate(sessions):
-        u = agg[:, :, k].sum(0) / max(abs(size[:, k].sum()), 1e-9)  # response per unit of the change
-        per_session[s] = {"size": size[:, k].tolist(), "per_unit_by_lag": np.round(u, 3).tolist(),
-                          "start_index": float(last_idx[k].mean())}
-        print(f"session {s}: start index {last_idx[k].mean():.2f}, mean size {size[:, k].mean():.2f}, "
-              f"per unit by lag {np.round(u, 2).tolist()}", flush=True)
-    out = {"run": os.path.relpath(a.run, ROOT), "sessions": sessions, "mode": a.mode, "objective": cfg.objective,
-           "test": d,
-           "per_session": per_session, "usage": backend.usage}
     path = a.out or a.run.replace(".json", f"_resume_{a.mode}.json")
-    json.dump(out, open(path, "w"), indent=1)
-    if pricers.raw:
-        with gzip.open(path.replace(".json", "_raw.jsonl.gz"), "wt") as fh:
-            for t, s, i, seed, text in pricers.raw:
-                fh.write(json.dumps({"t": t, "s": sessions[s], "i": i, "seed": seed, "text": text}) + "\n")
+    events = []  # one deviation test per event, saved after each so a budget stop keeps them
+
+    def summarise():
+        agg = np.concatenate([np.asarray(e["per_event"]["rival_aggression"]) for e in events])  # (events, lags, S)
+        size = np.concatenate([np.asarray(e["per_event"]["deviation_size"]) for e in events])  # (events, S)
+        gain = np.concatenate([np.asarray(e["per_event"]["gain"]) for e in events])            # (events, S)
+        per_session = {}
+        for k, s in enumerate(sessions):
+            u = agg[:, :, k] / size[:, k][:, None]
+            per_session[s] = {"size": size[:, k].tolist(), "per_unit_by_lag": np.round(u.mean(0), 3).tolist(),
+                              "lag1_per_event": np.round(u[:, 1], 3).tolist(), "gain": gain[:, k].tolist(),
+                              "start_index": float(last_idx[k].mean())}
+        test = {"mode": a.mode, "n_events": int(agg.shape[0] * agg.shape[2]), "horizon": a.horizon,
+                "per_event": {"rival_aggression": agg.tolist(), "deviation_size": size.tolist(), "gain": gain.tolist()}}
+        out = {"run": os.path.relpath(a.run, ROOT), "sessions": sessions, "mode": a.mode, "objective": cfg.objective,
+               "test": test, "per_session": per_session, "usage": backend.usage, "complete": len(events) == a.events}
+        json.dump(out, open(path, "w"), indent=1)
+        if pricers.raw:
+            with gzip.open(path.replace(".json", "_raw.jsonl.gz"), "wt") as fh:
+                for t, s_, i, seed, text in pricers.raw:
+                    fh.write(json.dumps({"t": t, "s": sessions[s_], "i": i, "seed": seed, "text": text}) + "\n")
+        return per_session
+
+    for e in range(a.events):
+        try:
+            events.append(deviation_test(env, pricers, backend, events=1, gap=a.gap, horizon=a.horizon,
+                                         mode=a.mode, cut=a.cut))
+        except BudgetExceeded as err:
+            print(f"stopped after {len(events)} events: {err}", flush=True)
+            break
+        ps = summarise()
+        for s, r in ps.items():
+            print(f"event {e + 1}: session {s}: per unit by lag {r['per_unit_by_lag']}", flush=True)
+    if events:
+        summarise()
     print("wrote", path)
 
 

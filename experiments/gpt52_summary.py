@@ -171,6 +171,20 @@ def main():
         units = [f"{ps[k]['per_unit_by_lag'][1]:.2f}" for k in sorted(ps, key=int)]
         gains = [f"{ps[k]['gain']:+.2f}" for k in sorted(ps, key=int)]
         macros.update({"GptRetestSessUnit": " and ".join(units), "GptRetestSessGain": " and ".join(gains)})
+    # placebo at the cartel state: session 4 rebuilt with the myopic objective (same history and plans)
+    mp = load("gpt52_high_duopoly_P1_session4_cut_myopic")
+    if mp and rt:
+        r = next(iter(mp["per_session"].values()))
+        lag1 = np.asarray(r["lag1_per_event"], float)
+        fw4 = out["retest"]["per_session"][mp["sessions"][0]] if mp["sessions"][0] in out["retest"]["per_session"] \
+            else out["retest"]["per_session"][str(mp["sessions"][0])]
+        out["myopic_at_cartel_state"] = {"session": mp["sessions"][0], "events": int(lag1.size),
+                                          "lag1_mean": float(lag1.mean()), "lag1_min": float(lag1.min()),
+                                          "lag1_max": float(lag1.max()), "per_unit_by_lag": r["per_unit_by_lag"],
+                                          "forward_lag1": fw4["per_unit_by_lag"][1], "cost": mp["usage"]["cost"]}
+        macros.update({"GptMyoStateN": int(lag1.size), "GptMyoStateUnit": f"{lag1.mean():.2f}",
+                       "GptMyoStateRange": f"${lag1.min():.2f}$--${lag1.max():.2f}$",
+                       "GptMyoStateSession": int(mp["sessions"][0]) + 1})
     if dc:  # conservative bound: intervals across events, three per session (design effect up to sqrt 3)
         u, c = per_unit(dc)
         macros["GptCutLowDE"] = f"{u[1] - np.sqrt(3) * c[1]:.2f}"
