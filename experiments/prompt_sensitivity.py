@@ -15,6 +15,7 @@ import math
 import os
 
 import numpy as np
+from scipy import stats
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WORDING = {"a": "original", "b": "paraphrase", "c": "finance register", "d": "terse",
@@ -41,7 +42,7 @@ def intensity(path):
     if not os.path.exists(p):
         return None
     b = np.asarray(json.load(open(p))["per_session"]["agg_intensity"], float)
-    return float(b.mean()), float(1.96 * b.std(ddof=1) / np.sqrt(len(b)))
+    return float(b.mean()), float(stats.t.ppf(0.975, len(b) - 1) * b.std(ddof=1) / np.sqrt(len(b)))
 
 
 def main():

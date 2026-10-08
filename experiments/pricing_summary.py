@@ -14,6 +14,7 @@ import os
 import re
 
 import numpy as np
+from scipy import stats
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "results", "llm_bertrand")
@@ -56,7 +57,10 @@ def write_table(table):
 
     def onpath(key):  # on-path coefficient on the rival's lagged price (Fish et al., Table 1)
         r = reg.get(key)
-        return "--" if not r or r["delta"] != r["delta"] else f"${r['delta']:.2f}_{{\\pm{1.96 * r['delta_se']:.2f}}}$"
+        if not r or r["delta"] != r["delta"]:
+            return "--"
+        tq = stats.t.ppf(0.975, r["clusters"] - 1)  # standard errors clustered by session
+        return f"${r['delta']:.2f}_{{\\pm{tq * r['delta_se']:.2f}}}$"
 
     L = ["\\begin{tabular}{@{}llcccccccc@{}}", "\\toprule",
          " & & price & profit & \\multicolumn{2}{c}{best-response deviation} & \\multicolumn{2}{c}{price cut} "
@@ -94,7 +98,9 @@ def main():
             if d is not None:
                 s = d["summary"]
                 pn = d["per_session"]["profit_over_nash"]
-                pci = 1.96 * float(np.std(pn, ddof=1)) / np.sqrt(len(pn))
+                tq = stats.t.ppf(0.975, len(pn) - 1)  # t intervals across sessions
+                pci = tq * float(np.std(pn, ddof=1)) / np.sqrt(len(pn))
+                s = dict(s, index_ci95=tq * float(np.std(d["per_session"]["index"], ddof=1)) / np.sqrt(len(pn)))
                 row = {"index": s["index"], "index_ci95": s["index_ci95"],
                        "profit_over_nash": s["profit_over_nash"], "profit_ci95": pci,
                        "parse_fail_rate": d["parse_fail_rate"]}

@@ -16,6 +16,7 @@ import re
 import sys
 
 import numpy as np
+from scipy import stats
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
@@ -69,7 +70,7 @@ def main():
         b = np.asarray(d["per_session"]["agg_intensity"], float)
         delta = (b - fb["agg_nash"]) / (fb["agg_coll"] - fb["agg_nash"])
         r = {"agg_intensity": float(b.mean()), "delta": float(delta.mean()),
-             "delta_ci95": float(1.96 * delta.std(ddof=1) / np.sqrt(len(delta)))}
+             "delta_ci95": float(stats.t.ppf(0.975, len(delta) - 1) * delta.std(ddof=1) / np.sqrt(len(delta)))}
         dv = d.get("deviation")
         if dv:
             r.update(rival=dv["d_beta_rival"][1], rival_ci95=dv["d_beta_rival_ci95"][1],

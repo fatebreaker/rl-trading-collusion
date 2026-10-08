@@ -13,6 +13,7 @@ import json
 import os
 
 import numpy as np
+from scipy import stats
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 RES = os.path.join(ROOT, "results", "llm_fish")
@@ -29,8 +30,9 @@ def load(name):
 
 
 def ci(a):
+    """Mean and half-width of a 95% t interval across sessions."""
     a = np.asarray(a, float)
-    return float(a.mean()), float(1.96 * a.std(ddof=1) / np.sqrt(len(a)))
+    return float(a.mean()), float(stats.t.ppf(0.975, len(a) - 1) * a.std(ddof=1) / np.sqrt(len(a)))
 
 
 def main():
@@ -64,10 +66,11 @@ def main():
                                    dc["rival_aggression_ci95"][1] / dc["deviation_size"]),
                          cut_gain=(dc["cum_gain_dev"], dc["cum_gain_dev_ci95"]))
             g = reg.get(f"{tag}_{cond}")
-            if g:
-                r.update(br_slope=g["br_slope"])
+            if g:  # exact best-response benchmarks at the run's prices (fish_regression.py)
+                r.update(br_slope=g["br_slope"], cut_slope=g["cut_slope"], brdev_slope=g["brdev_slope"])
                 if g["delta_se"] > 1e-8:  # prices that barely move make the regression degenerate
-                    r.update(delta=(g["delta"], 1.96 * g["delta_se"]))
+                    S = len(d["per_session"]["index"])  # standard errors clustered by session
+                    r.update(delta=(g["delta"], stats.t.ppf(0.975, S - 1) * g["delta_se"]))
             out[f"{tag}_{cond}"] = r
             key = f"Fish{mkey}{ckey}"
             macros[f"{key}Idx"] = f"{idx[0]:.2f}"
@@ -86,6 +89,8 @@ def main():
                 macros[f"{key}CutGain"] = f"{r['cut_gain'][0]:+.2f}\\pm{r['cut_gain'][1]:.2f}"
             if "br_slope" in r:
                 macros[f"{key}BR"] = f"{r['br_slope']:.2f}"
+                macros[f"{key}CutBR"] = f"{r['cut_slope']:.2f}"
+                macros[f"{key}BRDev"] = f"{r['brdev_slope']:.2f}"
             if "delta" in r:
                 macros[f"{key}Reg"] = f"{r['delta'][0]:.2f}"
             rows.append((mname, cname, r))
@@ -95,10 +100,11 @@ def main():
         for k, v in macros.items():
             fh.write(f"\\newcommand{{\\{k}}}{{{v}}}\n")
     pm = lambda t, sgn="": "--" if t is None else f"${t[0]:{sgn}.2f}_{{\\pm{t[1]:.2f}}}$"  # noqa: E731
-    L = ["\\begin{tabular}{@{}llcccccccc@{}}", "\\toprule",
-         " & & price & profit & \\multicolumn{3}{c}{best-response deviation} & $10\\%$ cut & on-path & best-resp. \\\\",
-         "\\cmidrule(lr){5-7}",
-         "Model & Prompt & index & index & size & rival & gain & rival per unit & coefficient & slope \\\\",
+    L = ["\\begin{tabular}{@{}llccccccccc@{}}", "\\toprule",
+         " & & price & profit & \\multicolumn{3}{c}{best-response deviation} & \\multicolumn{2}{c}{$10\\%$ cut}"
+         " & on-path & best-resp. \\\\",
+         "\\cmidrule(lr){5-7}\\cmidrule(lr){8-9}",
+         "Model & Prompt & index & index & size & rival & gain & rival per unit (BR) & gain & coefficient & slope \\\\",
          "\\midrule"]
     for mname, cname, r in rows:
         if "br_per_unit" in r:  # sizeable deviation: response per unit of the cut
@@ -106,8 +112,11 @@ def main():
         else:
             br = pm(r.get("br_response"))
         size = f"${r['br_size']:.2f}$" if "br_size" in r else "--"
+        cut = pm(r.get("response"))
+        if "response" in r and "cut_slope" in r:  # what a rival that only best-responds would follow
+            cut += f" (${r['cut_slope']:.2f}$)"
         L.append(" & ".join([mname, cname, pm(r["index"]), pm(r["profit_index"]), size, br,
-                             pm(r.get("gain"), "+"), pm(r.get("response")), pm(r.get("delta")),
+                             pm(r.get("gain"), "+"), cut, pm(r.get("cut_gain"), "+"), pm(r.get("delta")),
                              f"${r['br_slope']:.2f}$" if "br_slope" in r else "--"]) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(ROOT, "paper", "table_fish.tex"), "w").write("\n".join(L) + "\n")

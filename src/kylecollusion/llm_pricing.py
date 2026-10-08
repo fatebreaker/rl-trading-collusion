@@ -86,6 +86,31 @@ def best_response(p_other: np.ndarray, cfg: BertrandConfig) -> np.ndarray:
     return out
 
 
+def best_response_exact(p_other: float, cfg: BertrandConfig) -> float:
+    """One-period best response to a rival price, from the first-order condition
+    (p - c)(1 - q_i) = mu, solved by bisection (no price grid)."""
+    def foc(p):
+        return (p - cfg.cost) * (1 - logit_demand(np.array([p, p_other]), cfg)[0]) - cfg.mu
+    lo, hi = cfg.cost, cfg.cost + 40 * cfg.mu  # foc(lo) < 0 < foc(hi)
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (mid, hi) if foc(mid) < 0 else (lo, mid)
+    return 0.5 * (lo + hi)
+
+
+def best_response_slope(p_other: float, cfg: BertrandConfig) -> float:
+    """Exact slope of the static best response at a rival price: by the implicit
+    function theorem on the first-order condition, q_i q_j / (1 - q_i) at (BR, p_other)."""
+    q = logit_demand(np.array([best_response_exact(p_other, cfg), p_other]), cfg)
+    return float(q[0] * q[1] / (1 - q[0]))
+
+
+def best_response_secant(p_from: float, p_to: float, cfg: BertrandConfig) -> float:
+    """Change in the best response per unit change in the rival's price from p_from
+    to p_to: what a rival that only best-responds follows of a discrete price cut."""
+    return float((best_response_exact(p_from, cfg) - best_response_exact(p_to, cfg)) / (p_from - p_to))
+
+
 class PricingMarket:
     """S independent duopoly sessions with deterministic logit demand."""
 

@@ -3,8 +3,8 @@ import re
 import numpy as np
 
 from kylecollusion.llm_pricing import (
-    LLMPricers, PricingConfig, PricingMarket, best_response, deviation_test, parse_price,
-    pricing_benchmarks, run_period,
+    LLMPricers, PricingConfig, PricingMarket, best_response, best_response_exact, best_response_secant,
+    best_response_slope, deviation_test, parse_price, pricing_benchmarks, run_period, scaled_config,
 )
 from kylecollusion.llm_traders import ScriptedBackend
 
@@ -21,6 +21,21 @@ def test_best_response_to_nash_is_nash_and_scales():
         env = PricingMarket(PricingConfig(scale=k), 1)
         pn = env.bench["p_nash"]
         assert abs(best_response(np.array([pn]), env.bcfg)[0] - pn) < 2e-3 * k
+
+
+def test_exact_best_response_slope():
+    # the exact best response passes through Nash, its slope matches a fine finite difference,
+    # lies in 0.36-0.44 between the Nash and monopoly prices, and does not depend on the currency unit
+    cfg, b = scaled_config(1.0), pricing_benchmarks(1.0)
+    assert abs(best_response_exact(b["p_nash"], cfg) - b["p_nash"]) < 2e-4  # the benchmark is on a 1e-4 grid
+    for p in np.linspace(b["p_nash"], b["p_mono"], 7):
+        h = 1e-5
+        fd = (best_response_exact(p + h, cfg) - best_response_exact(p - h, cfg)) / (2 * h)
+        assert abs(best_response_slope(p, cfg) - fd) < 1e-4
+        assert 0.35 < best_response_slope(p, cfg) < 0.44
+        assert abs(best_response_slope(10 * p, scaled_config(10.0)) - best_response_slope(p, cfg)) < 1e-6
+    # a small cut's secant approaches the local slope
+    assert abs(best_response_secant(1.8, 1.8 * 0.999, cfg) - best_response_slope(1.8, cfg)) < 1e-3
 
 
 def test_parse_price():

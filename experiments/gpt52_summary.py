@@ -223,17 +223,16 @@ def main():
         sd_s = sd_n * np.sqrt((n - 1) / (m * (S - 1)))     # sd across session means if events repeat
         macros["GptCutLowDE"] = f"{u[1] - stats.t.ppf(0.975, S - 1) * sd_s / np.sqrt(S):.2f}"
     # what a 10% cut from the cartel state earns against rivals that do not punish (analytic)
-    sys.path.insert(0, os.path.join(ROOT, "experiments"))
-    from fish_regression import br_slope  # noqa: E402
     from kylecollusion.bertrand import logit_demand  # noqa: E402
-    from kylecollusion.llm_pricing import scaled_config  # noqa: E402
+    from kylecollusion.llm_pricing import best_response_secant, scaled_config  # noqa: E402
     bc = scaled_config(1.0)
 
     def prof(p0, p1):
         q = logit_demand(np.array([[p0, p1]]), bc)[0]
         return float((p0 - bc.cost) * q[0])
     p0 = 1.81  # session 4's price
-    cut, sl = 0.9 * p0, br_slope(p0, 1.0)
+    cut = 0.9 * p0
+    sl = best_response_secant(p0, cut, bc)  # what a rival that only best-responds follows of this cut
     base = sum(0.95 ** k * prof(p0, p0) for k in range(7))
 
     def path(r1):
@@ -241,18 +240,26 @@ def main():
     bench = {"none": (path(p0) - base) / b["pi_nash"], "best_response": (path(p0 - sl * (p0 - cut)) - base) / b["pi_nash"],
              "match": (path(cut) - base) / b["pi_nash"], "slope": sl}
     out["cut_benchmarks"] = bench
-    macros.update({"GptBenchNone": f"{bench['none']:+.2f}", "GptBenchBR": f"{bench['best_response']:+.2f}",
-                   "GptBenchMatch": f"{bench['match']:+.2f}", "GptBenchSlope": f"{sl:.2f}"})
+    if rt:  # the same benchmark at each re-tested session's price (the rival follows the deviator, firm 1)
+        P0 = np.asarray(fw["prices_sessions"], float)[:, -1, 0]
+        brs = {s_: best_response_secant(P0[s_], 0.9 * P0[s_], bc) for s_ in rt["sessions"]}
+        out["retest"]["br_benchmark"] = {str(k): v for k, v in brs.items()}
+        out["retest"]["br_benchmark_mean"] = float(np.mean(list(brs.values())))
+    sg = lambda x: f"{0.0 if abs(x) < 0.005 else x:+.2f}"  # noqa: E731  (no negative zero)
+    macros.update({"GptBenchNone": sg(bench["none"]), "GptBenchBR": sg(bench["best_response"]),
+                   "GptBenchMatch": sg(bench["match"]), "GptBenchSlope": f"{sl:.2f}"})
     # the same plan coding for the open models under the protocol
     for tag, key in (("gptoss20b_duopoly_P1", "OssPOne"), ("gptoss20b_myopic_P1", "OssMyopic"),
                      ("gptoss120b_duopoly_P1", "OssBig")):
         d = load(tag)
         if d is None:
             continue
-        _, lp = texts(tag, d["args"]["periods"])
+        rows_o, lp = texts(tag, d["args"]["periods"])
         hits = [k for k, v in lp.items() if MATCH.search(v)]
-        out[f"plans_{tag}"] = {"match": len(hits), "plans": len(lp), "hits": [list(h) for h in sorted(hits)]}
-        macros.update({f"Gpt{key}MatchPlans": len(hits), f"Gpt{key}Plans": len(lp)})
+        war_o = sum(bool(WAR.search(r["text"])) for r in rows_o) / len(rows_o)  # same regex as for GPT-5.2
+        out[f"plans_{tag}"] = {"match": len(hits), "plans": len(lp), "hits": [list(h) for h in sorted(hits)],
+                               "war_share": war_o}
+        macros.update({f"Gpt{key}MatchPlans": len(hits), f"Gpt{key}Plans": len(lp), f"Gpt{key}War": f"{100 * war_o:.0f}"})
     led = [json.loads(x) for x in open(os.path.join(ROOT, "results", "openai_spend.jsonl")) if x.strip()]
     cost = sum(x["cost"] for x in led if x.get("tag", "").startswith("gpt52_high_")
                and "pilot" not in x.get("tag", ""))  # main runs, their tests and the re-test

@@ -6,7 +6,7 @@ with firm-by-run fixed effects, on the second half of each run. Fish et al. read
 delta > 0 as a reward-punishment scheme. Prices are strategic complements in
 this game, so a firm that only best-responds to the rival's last price also has
 delta > 0; we compare delta, and the long-run response delta / (1 - gamma), with
-the slope of the static best response at the run's mean price.
+the exact slope of the static best response at the run's prices.
 
 Writes results/fish_regression.json and paper/numbers_fishreg.tex.
 
@@ -25,7 +25,8 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
 sys.path.insert(0, os.path.join(ROOT, "src"))
-from kylecollusion.llm_pricing import best_response, parse_fish, parse_price, scaled_config  # noqa: E402
+from kylecollusion.llm_pricing import (best_response_exact, best_response_secant,  # noqa: E402
+                                       best_response_slope, parse_fish, parse_price, scaled_config)
 
 
 def prices_of(path: str, d: dict) -> np.ndarray | None:
@@ -80,10 +81,26 @@ def regress(P: np.ndarray, burn: float = 0.5) -> dict:
 
 
 def br_slope(price: float, scale: float) -> float:
+    """Exact slope of the static best response at a rival price (scale-free)."""
+    return best_response_slope(price, scaled_config(scale))
+
+
+def benchmarks(P: np.ndarray, scale: float) -> dict:
+    """What a rival that only best-responds shows, at the run's prices (sessions x firms):
+    br_slope, the local slope at each firm's mean price over the scoring window (the
+    comparison for the on-path coefficient); cut_slope, the change in its best response per
+    unit of a 10% cut from the deviator's final price; brdev_slope, the same for the
+    deviator's move to its best response. Deviation tests start from the final state, and
+    the deviator is firm 1 (index 0)."""
     cfg = scaled_config(scale)
-    h = 0.01 * scale
-    return float((best_response(np.array([price + h]), cfg)[0]
-                  - best_response(np.array([price - h]), cfg)[0]) / (2 * h))
+    S, T, _ = P.shape
+    local = [br_slope(P[s, T // 2:, i].mean(), scale) for s in range(S) for i in (0, 1)]
+    cut, brd = [], []
+    for p0, p1 in P[:, -1, :]:
+        cut.append(best_response_secant(p0, 0.9 * p0, cfg))
+        b = best_response_exact(p1, cfg)
+        brd.append(best_response_secant(p0, b, cfg) if abs(p0 - b) > 1e-4 * scale else best_response_slope(p0, cfg))
+    return {"br_slope": float(np.mean(local)), "cut_slope": float(np.mean(cut)), "brdev_slope": float(np.mean(brd))}
 
 
 def main():
@@ -101,10 +118,11 @@ def main():
             continue
         r = regress(P)
         k = d["args"].get("scale", 1.0)
-        r["br_slope"] = br_slope(float(P[:, P.shape[1] // 2:].mean()), k)
+        r.update(benchmarks(P, k), clusters=int(P.shape[0]))
         out[os.path.basename(f)[:-5]] = r
         print(f"{os.path.basename(f)[:-5]:34s} gamma {r['gamma']:.3f} delta {r['delta']:.3f} "
-              f"({r['delta_se']:.3f}) long-run {r.get('long_run', np.nan):.3f} BR slope {r['br_slope']:.2f}")
+              f"({r['delta_se']:.3f}) long-run {r.get('long_run', np.nan):.3f} BR slope {r['br_slope']:.3f} "
+              f"cut {r['cut_slope']:.3f} BR dev {r['brdev_slope']:.3f}")
     json.dump(out, open(os.path.join(ROOT, "results", "fish_regression.json"), "w"), indent=1)
     names = {"mistral7b_duopoly_k1": "Mistral", "mistral7b_myopic_k1": "MistralMyopic",
              "qwen3_8b_duopoly_k1": "Qwen", "qwen3_8b_myopic_k1": "QwenMyopic",
@@ -116,6 +134,15 @@ def main():
             for m, v in (("", None if r is None else f"{r['delta']:.2f}"),
                          ("SE", None if r is None else f"{r['delta_se']:.2f}")):
                 fh.write(f"\\newcommand{{\\FishReg{nm}{m}}}{{{'--' if v is None else v}}}\n")
+        # benchmarks of our pricing runs: what a rival that only best-responds follows of the
+        # best-response deviation (duopolies), and the local slope across all of these runs
+        duo = [out[k]["brdev_slope"] for k in ("mistral7b_duopoly_k1", "qwen3_8b_duopoly_k1",
+                                               "qwen3_8b_think_duopoly_k1") if k in out]
+        ours = [r["br_slope"] for k, r in out.items() if k.startswith(("mistral7b_", "qwen3_8b_"))]
+        if duo:
+            fh.write(f"\\newcommand{{\\FishRegBRDevRange}}{{${min(duo):.2f}$--${max(duo):.2f}$}}\n")
+        if ours:
+            fh.write(f"\\newcommand{{\\FishRegBRRange}}{{${min(ours):.2f}$--${max(ours):.2f}$}}\n")
 
 
 if __name__ == "__main__":
