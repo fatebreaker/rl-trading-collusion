@@ -24,9 +24,15 @@ RES = os.path.join(ROOT, "results", "llm_fish")
 WAR = re.compile(r"price war|retaliat", re.I)
 COOP = re.compile(r"cooperat|collu|tacit|coordinat|cartel", re.I)
 # a rule that answers a rival's price cut with a cut (prices contain dots, so lines, not sentences)
-MATCH = re.compile(r"(match|follow)[^\n]{0,60}(cut|undercut|lower|drop|below|<)"
-                   r"|(cut|undercut|lower|drop)s?[^\n]{0,80}(match|follow)"
-                   r"|(<|below|less than|lower than)[^\n]{0,60}match", re.I)
+# plans that match a rival's lower price: coded by reading every final PLANS file
+# (results/plan_coding.json: the criterion, and the rule quoted from each counted plan)
+CODING = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "results",
+                                     "plan_coding.json")))["runs"]
+
+
+def matching(tag):
+    """(session, firm) pairs, 0-based, whose final plan matches a rival's lower price."""
+    return {(s - 1, i - 1) for s, i, _ in CODING[tag]["matching"]}
 
 
 def load(name):
@@ -91,12 +97,13 @@ def main():
                          "profit_over_nash": fw["per_session"]["profit_over_nash"][s],
                          "stable_streak": int(streak), "stable": streak >= 70, "change_last20": drop,
                          "pattern": pattern,
-                         "match_rules": sum(bool(MATCH.search(last.get((s, i), ""))) for i in (0, 1))})
+                         "match_rules": sum((s, i) in matching("gpt52_high_duopoly_P1") for i in (0, 1))})
     stable = [x for x in sessions if x["stable"]]
     cartel = [x for x in stable if x["index_last10"][0] <= 1]
     above = [x for x in stable if x["index_last10"][0] > 1]
     n_plans = len(last)
-    n_match = sum(bool(MATCH.search(p)) for p in last.values())
+    n_match = len(matching("gpt52_high_duopoly_P1"))
+    assert n_plans == CODING["gpt52_high_duopoly_P1"]["plans"]
     war = sum(bool(WAR.search(r["text"])) for r in rows) / len(rows)
     coop = sum(bool(COOP.search(r["text"])) for r in rows) / len(rows)
     out["forward"] = {"sessions": sessions, "war_share": war, "coop_share": coop,
@@ -157,7 +164,7 @@ def main():
         mrows, mlast = texts("gpt52_high_myopic_P1", Tm)
         mwar = sum(bool(WAR.search(r["text"])) for r in mrows) / len(mrows)
         out["myopic"] = {"index": my["summary"]["index"], "index_ci95": my["summary"]["index_ci95"],
-                         "war_share": mwar, "match_plans": sum(bool(MATCH.search(p)) for p in mlast.values()),
+                         "war_share": mwar, "match_plans": len(matching("gpt52_high_myopic_P1")),
                          "plans": len(mlast)}
         macros.update({"GptMyoWar": f"{100 * mwar:.0f}", "GptMyoMatchPlans": out["myopic"]["match_plans"],
                        "GptMyoPlans": len(mlast)})
@@ -212,7 +219,8 @@ def main():
         macros.update({"GptMyoStateN": int(lag1.size), "GptMyoStateUnit": f"{lag1.mean():.2f}",
                        "GptMyoStateRange": f"${lag1.min():.2f}$--${lag1.max():.2f}$",
                        "GptMyoStateList": ", ".join(f"${x:.2f}$" for x in lag1[:-1]) + f" and ${lag1[-1]:.2f}$",
-                       "GptMyoStateSession": int(mp["sessions"][0]) + 1})
+                       "GptMyoStateSession": int(mp["sessions"][0]) + 1,
+                       "GptMyoStateGain": f"{float(np.mean(r['gain'])):.2f}"})
     if dc:  # conservative bound: the main run's tests keep only event-level summaries, so take the
         # worst case, events within a session identical (intra-class correlation 1): then the S session
         # means carry all the information, and the bound is a t interval on S - 1 degrees of freedom
@@ -255,17 +263,36 @@ def main():
         if d is None:
             continue
         rows_o, lp = texts(tag, d["args"]["periods"])
-        hits = [k for k, v in lp.items() if MATCH.search(v)]
+        hits = sorted(matching(tag))
+        assert len(lp) == CODING[tag]["plans"]
         war_o = sum(bool(WAR.search(r["text"])) for r in rows_o) / len(rows_o)  # same regex as for GPT-5.2
         out[f"plans_{tag}"] = {"match": len(hits), "plans": len(lp), "hits": [list(h) for h in sorted(hits)],
                                "war_share": war_o}
         macros.update({f"Gpt{key}MatchPlans": len(hits), f"Gpt{key}Plans": len(lp), f"Gpt{key}War": f"{100 * war_o:.0f}"})
+    # power of the pricing tests that find no punishment: the response per unit above a best
+    # responder's that each would detect with 80% power (2.8 standard errors), allowing for the
+    # worst case of identical events within a session (standard error times sqrt(events/session))
+    mdes = {}
+    pr = json.load(open(os.path.join(ROOT, "results", "pricing_summary.json")))
+    for k in ("mistral7b_duopoly_k1", "qwen3_8b_duopoly_k1", "qwen3_8b_think_duopoly_k1"):
+        m = json.load(open(os.path.join(ROOT, "results", "llm_bertrand", f"{k}.json")))["args"]["dev_events"]
+        mdes[k] = 2.8 * pr[k]["pass_through_ci95"] / 1.96 * np.sqrt(m)
+    fsum = json.load(open(os.path.join(ROOT, "results", "fish_summary.json")))
+    for k in ("gptoss20b_duopoly_P1", "gptoss120b_duopoly_P1"):
+        m = json.load(open(os.path.join(RES, f"{k}.json")))["args"]["dev_events"]
+        mdes[k] = 2.8 * fsum[k]["response"][1] / 1.96 * np.sqrt(m)
+    g5s = fsum["gpt52_high_duopoly_P1"]
+    out["pricing_mde80"] = mdes
+    out["gpt52_excess"] = g5s["response"][0] - g5s["cut_slope"]
+    macros.update({"PrMDERange": f"${min(mdes.values()):.2f}$--${max(mdes.values()):.2f}$",
+                   "GptExcess": f"{g5s['response'][0] - g5s['cut_slope']:.2f}"})
     led = [json.loads(x) for x in open(os.path.join(ROOT, "results", "openai_spend.jsonl")) if x.strip()]
     cost = sum(x["cost"] for x in led if x.get("tag", "").startswith("gpt52_high_")
                and "pilot" not in x.get("tag", ""))  # main runs, their tests and the re-test
     out["api_cost"] = cost
     macros["GptCost"] = f"{cost:.0f}"
     json.dump(out, open(os.path.join(ROOT, "results", "gpt52_summary.json"), "w"), indent=1)
+    os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_gpt52.tex"), "w") as fh:
         fh.write("% generated by experiments/gpt52_summary.py\n")
         for k, v in macros.items():

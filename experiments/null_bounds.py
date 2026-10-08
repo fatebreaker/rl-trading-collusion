@@ -18,6 +18,8 @@ import json
 import math
 import os
 
+import numpy as np
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIRS = ["llm_pilot", "llm_api", "llm_models", "grpo_audit", "llm_talk"]
 CONTROLS = ("punisher",)  # instructed trigger strategies
@@ -94,7 +96,7 @@ def random_effects(ts, floor):
     return m, 1.96 * math.sqrt(1 / sum(w2))
 
 
-def write_table(null, groups, ctrl_eff, res, effect, re_all, cum):
+def write_table(null, groups, ctrl_eff, res, effect, re_all, cum, floor):
     """paper/table_nulls.tex: the pooled null by information structure and robustness subset.
     Chance is charged only to tests with sampling variance; "below" counts tests whose 95%
     upper bound lies below the instructed traders' response with the rival's orders shown."""
@@ -102,14 +104,20 @@ def write_table(null, groups, ctrl_eff, res, effect, re_all, cum):
     pm = lambda m, c: f"${f3(m)}\\pm{c:.3f}$"  # noqa: E731
     var = lambda ts: [t for t in ts if t["ci"] / 1.96 > 0.001]  # noqa: E731
 
+    def own(t):  # the instructed traders' response under the same information and deviation
+        g = structure(t)
+        if g == "monitor":
+            return ctrl_eff["monitor"] if t["test"] == "deviation" else ctrl_eff["monitor_shift"]
+        return ctrl_eff[g]
+
     def cells(ts, pooled, mde=True, key=("mean", "ci")):
         m, c = key
         nv = len(var(ts))
         sig = sum(t[m] - t[c] > 0 for t in ts)
-        below = sum(t[m] + t[c] < (effect if m == "mean" else cum[3]) for t in ts)
-        md = sorted(2.8 * t[c] / 1.96 for t in ts)
+        below = sum(t[m] + t[c] < (own(t) if m == "mean" else cum[3]) for t in ts)
+        md = [2.8 * t[c] / 1.96 for t in var(ts)]  # tests with sampling variance only
         return (f"{len(ts)} & {nv} & {sig} ({0.025 * nv:.1f}) & {below} & {pm(*pooled)} & "
-                + (f"{md[len(md) // 2]:.2f}" if mde else "--"))
+                + (f"{float(np.median(md)):.2f}" if mde and md else "--"))
 
     st = {g: [t for t in null if structure(t) == g] for g in ("monitor", "flow_br", "flow_shift")}
     files = {t["file"] for t in null}
@@ -118,11 +126,14 @@ def write_table(null, groups, ctrl_eff, res, effect, re_all, cum):
     L = ["\\begin{tabular}{@{}lcccccc@{}}", "\\toprule",
          "Tests & $n$ & with variance & Significant & Below instructed & Pooled response & Median MDE \\\\",
          "\\midrule"]
-    for name, g, c in (("Rival's orders shown", "monitor", ctrl_eff.get("monitor")),
-                       ("Order flow, best-response deviation", "flow_br", ctrl_eff.get("flow_br")),
-                       ("Order flow, shift deviation", "flow_shift", ctrl_eff.get("flow_shift"))):
+    mon_br = [t for t in st["monitor"] if t["test"] == "deviation"]
+    mon_sh = [t for t in st["monitor"] if t["test"] != "deviation"]
+    for name, ts, c in (("Rival's orders shown, best-response deviation", mon_br, ctrl_eff.get("monitor")),
+                        ("Rival's orders shown, shift deviation", mon_sh, ctrl_eff.get("monitor_shift")),
+                        ("Order flow, best-response deviation", st["flow_br"], ctrl_eff.get("flow_br")),
+                        ("Order flow, shift deviation", st["flow_shift"], ctrl_eff.get("flow_shift"))):
         L.append(f"{name} (instructed: {c:.2f}) & "
-                 + cells(st[g], (groups[g]["re_pooled"], groups[g]["re_pooled_ci"])) + " \\\\")
+                 + cells(ts, random_effects(var(ts), floor) if var(ts) else (float("nan"), float("nan"))) + " \\\\")
     L.append("\\midrule")
     L.append("All & " + cells(null, re_all) + " \\\\")
     L.append("Each run once & " + cells(indep, (res["indep_pooled"], res["indep_pooled_ci"]), mde=False) + " \\\\")
@@ -132,6 +143,7 @@ def write_table(null, groups, ctrl_eff, res, effect, re_all, cum):
     L.append(f"Summed over six periods (instructed: {ctrl_cum:.2f}) & "
              + cells(null, (m_cum, c_cum), mde=False, key=("cum_mean", "cum_ci")) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
+    os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     open(os.path.join(ROOT, "paper", "table_nulls.tex"), "w").write("\n".join(L) + "\n")
 
 
@@ -178,13 +190,21 @@ def main():
     groups = {}
     for g in ("monitor", "flow_shift", "flow_br"):
         ts = [t for t in null if structure(t) == g]
-        mde = sorted(2.8 * t["ci"] / 1.96 for t in ts)
+        # median detectable effect over tests with sampling variance (deterministic policies have none)
+        mde = [float(np.median([2.8 * t["ci"] / 1.96 for t in ts if t["ci"] / 1.96 > 0.001]))]
         # pooled over tests with sampling spread (deterministic trained policies would dominate)
         m, c = random_effects([t for t in ts if t["ci"] / 1.96 > 0.001], floor)
         groups[g] = {"n": len(ts), "sig_pos": sum(t["mean"] - t["ci"] > 0 for t in ts),
-                     "re_pooled": m, "re_pooled_ci": c, "median_mde80": mde[len(mde) // 2],
+                     "re_pooled": m, "re_pooled_ci": c, "median_mde80": mde[0],
                      "below_ctrl": sum(t["mean"] + t["ci"] < effect for t in ts)}
     m_all, c_all = random_effects([t for t in null if t["ci"] / 1.96 > 0.001], floor)
+    # perfect monitoring by deviation type, each against the instructed traders' response to it
+    mon = [t for t in null if structure(t) == "monitor"]
+    for typ, key, ref in (("deviation", "br", "monitor"), ("deviation_shift", "shift", "monitor_shift")):
+        tt = [t for t in mon if t["test"] == typ]
+        groups["monitor"][f"median_mde80_{key}"] = float(np.median([2.8 * t["ci"] / 1.96 for t in tt
+                                                                   if t["ci"] / 1.96 > 0.001]))
+        groups["monitor"][f"below_own_{key}"] = sum(t["mean"] + t["ci"] < ctrl_eff[ref] for t in tt)
     # cumulative response over the following periods
     cum = [{"mean": t["cum_mean"], "ci": t["cum_ci"]} for t in null if t["cum_ci"] / 1.96 > 0.001]
     m_cum, c_cum = random_effects(cum, floor)
@@ -229,6 +249,11 @@ def main():
         macros.update({f"Null{nm}N": r["n"], f"Null{nm}Sig": r["sig_pos"],
                        f"Null{nm}Pooled": f"{r['re_pooled']:.3f}", f"Null{nm}PooledCI": f"{r['re_pooled_ci']:.3f}",
                        f"Null{nm}MDE": f"{r['median_mde80']:.2f}", f"Null{nm}BelowCtrl": r["below_ctrl"]})
+    gm = groups["monitor"]
+    macros.update({"NullMonBRMDE": f"{gm['median_mde80_br']:.2f}", "NullMonShiftMDE": f"{gm['median_mde80_shift']:.2f}",
+                   "NullMonBelowOwn": gm["below_own_br"] + gm["below_own_shift"],
+                   "NullCtrlMonShift": f"{ctrl_eff['monitor_shift']:.2f}",
+                   "NullCtrlFlowShift": f"{ctrl_eff['flow_shift']:.2f}"})
     macros.update({"NullCumPooled": f"{abs(m_cum) if abs(m_cum) < 5e-4 else m_cum:.3f}",
                    "NullCumPooledCI": f"{c_cum:.3f}", "NullCumSig": cum_sig, "NullCtrlCum": f"{ctrl_cum:.2f}"})
     br = [t for t in null if t["test"] == "deviation" and t.get("gain") is not None]
@@ -243,7 +268,8 @@ def main():
                    "NullAbovePooledCI": f"{c_ab:.3f}", "NullAboveBelowCtrl": res["above_below_ctrl"]})
     macros.update({"NullCtrlFlow": f"{ctrl_eff.get('flow_br', float('nan')):.2f}",
                    "NullCtrlShift": f"{ctrl_eff.get('monitor_shift', float('nan')):.2f}"})
-    write_table(null, groups, ctrl_eff, res, effect, (m_all, c_all), (m_cum, c_cum, cum_sig, ctrl_cum))
+    write_table(null, groups, ctrl_eff, res, effect, (m_all, c_all), (m_cum, c_cum, cum_sig, ctrl_cum), floor)
+    os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_nulls.tex"), "w") as fh:
         fh.write("% generated by experiments/null_bounds.py -- do not edit\n")
         for k, v in macros.items():

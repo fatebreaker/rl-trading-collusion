@@ -60,6 +60,7 @@ def main(argv=None):
     ap.add_argument("--dev-hike", type=float, default=0.0, help="price rise for an upward deviation (0 skips it)")
     ap.add_argument("--no-br-test", action="store_true", help="skip the best-response deviation test")
     ap.add_argument("--gpu-mem", type=float, default=0.85)
+    ap.add_argument("--lora", default=None, help="a GRPO-trained LoRA adapter (see kylecollusion.grpo)")
     ap.add_argument("--dtype", default="auto")
     ap.add_argument("--attention-backend", default=None)
     ap.add_argument("--tp", type=int, default=1)
@@ -92,7 +93,7 @@ def main(argv=None):
                               dtype=a.dtype, attention_backend=a.attention_backend,
                               max_model_len=a.max_model_len or (16384 if a.thinking else 8192),
                               tensor_parallel_size=a.tp, reasoning_effort=a.reasoning_effort,
-                              max_num_seqs=a.max_num_seqs)
+                              max_num_seqs=a.max_num_seqs, lora_path=a.lora)
     else:
         backend = OpenAIBackend(a.model, reasoning_effort=a.reasoning_effort, run_budget=a.run_budget,
                                 total_budget=a.total_budget, tag=os.path.basename(a.out),

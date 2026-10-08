@@ -9,13 +9,10 @@ learning traders (tabular Q-learning, language models trading in context, and
 language models trained by reinforcement learning) and a logit-Bertrand pricing
 game with LLM pricing agents (our prompt and the protocol of Fish et al.), runs
 the audit (paired deviation tests, placebos, scale sweeps, positive controls),
-and builds every
-table and figure of `paper/main_acl.tex` (and of the longer versions
-`paper/main_rfs.tex` and `paper/main_v2.tex`). All results are simulated; no external
-data are used. Running everything from scratch takes a few hundred
-GPU-hours (8 GPUs for about two days here) plus CPU time for the Q-learning
-sweeps; every intermediate result is included
-under `results/`, so tables and figures can be rebuilt in minutes.
+and summarises the runs. All results are simulated; no external data are used.
+Running everything from scratch takes a few hundred GPU-hours (8 GPUs for about
+two days here) plus CPU time for the Q-learning sweeps. Runs write their outputs
+to `results/`, which is not part of this repository.
 
 ## Data availability
 
@@ -25,7 +22,8 @@ outputs are the only "data" that cannot be regenerated exactly:
 - Open-weight models run locally with fixed sampling seeds: Qwen3-0.6B/1.7B/4B/8B
   and Qwen3-32B-AWQ (`Qwen/Qwen3-*`), `microsoft/phi-4`,
   `allenai/OLMo-2-1124-13B-Instruct`, `mistralai/Mistral-7B-Instruct-v0.3`,
-  `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B` and `openai/gpt-oss-20b`.
+  `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B`, `openai/gpt-oss-20b` and
+  `openai/gpt-oss-120b`.
   Regeneration is exact up to GPU non-determinism in batched generation (an
   A/A test, `results/aa_test`, measures it: 98% of paired vLLM responses are
   identical).
@@ -33,27 +31,25 @@ outputs are the only "data" that cannot be regenerated exactly:
   through the paid API. Round-1 runs called the model aliases `gpt-5.4-nano`
   and `gpt-5.4-mini` (October 2026); round-2 runs pin the snapshots
   `gpt-5.4-nano-2026-03-17` and `gpt-5.4-mini-2026-03-17` and record the model
-  ids the API reports. GPT-5.5 runs pin `gpt-5.5-2026-04-23` and use the
-  flex service tier (half price). The API honours seeds only approximately, so
+  ids the API reports. GPT-5.5 runs pin `gpt-5.5-2026-04-23` and GPT-5.2 runs
+  pin `gpt-5.2-2025-12-11`, both on the flex service tier (half price). The API honours seeds only approximately, so
   reruns reproduce results in distribution, not exactly. Cost of a full rerun
-  of the API experiments, including the judges: about USD 135 at October 2026
-  prices (per-call ledger: `results/openai_spend.jsonl`).
+  of the API experiments, including the judges: about USD 245 at October 2026
+  prices (the runs write a per-call ledger to `results/openai_spend.jsonl`).
 - Raw responses: round-2 runs save every response
   (`results/llm_*/*_raw.jsonl.gz`); round-1 runs saved the full order paths and
   the responses of the first session. Prompts are fully determined by the code
   (`src/kylecollusion/llm_traders.py`) and the saved paths.
-- Trained LoRA adapters (about 4 GB) are not in the git repository; they are
-  deposited separately (see "Deposit" below) and can be regenerated with
-  `experiments/grpo_train.py`.
+- Trained LoRA adapters (about 4 GB) are deposited separately (see "Deposit"
+  below) and can be regenerated with `experiments/grpo_train.py`.
 
 ## Computational requirements
 
 - Python 3.10. Two environments were used:
-  - simulation and figures: numpy 1.26.4, numba 0.61.2, torch 2.9.0,
+  - simulation and analysis: numpy 1.26.4, numba 0.61.2, torch 2.9.0,
     matplotlib 3.10.6 (`pip install -e ".[dev]" matplotlib numba`);
   - language models: vllm 0.17.0, torch 2.10.0 (CUDA 12.8), transformers 5.7.0,
     peft 0.19.1, openai 2.24.0, numpy 2.2.6.
-- LaTeX: tectonic 0.17.0.
 - Hardware used: 2x Intel Xeon Gold 6226R (64 threads), 754 GB RAM,
   4x NVIDIA A100 40 GB, 4x NVIDIA Quadro RTX 6000 24 GB. RTX 6000 runs need
   `--dtype half --attention-backend triton_attn`.
@@ -82,9 +78,11 @@ outputs are the only "data" that cannot be regenerated exactly:
   condition, including `talk`/`talk_monitor` for cheap talk, `--disclose-rule`
   and `--aa-test`; `llm_*.sh` reproduce each batch); pricing agents
   (`llm_bertrand.py`, `llm_bertrand.sh`; `--style fish --prefix P1` for the
-  protocol of Fish et al.); GRPO (`grpo_train.py`, `grpo_audit.sh`); summaries
-  that write the tables and quoted numbers (`*_summary.py`, `null_bounds.py`,
-  `fish_regression.py`, `prompt_sensitivity.py`, `dou_lownoise.py`); judges
+  protocol of Fish et al.); GRPO (`grpo_train.py`, `grpo_audit.sh`;
+  `grpo_pricing_audit.sh` for agents trained in the pricing game); summaries of
+  the runs (`*_summary.py`, `null_bounds.py`, `fish_regression.py`,
+  `prompt_sensitivity.py`, `dou_lownoise.py`), which write JSON to `results/`
+  and LaTeX macros for the paper to `paper/`; judges
   (`trace_judge.py`, `talk_judge.py`, `annotation_*.py`); monitoring
   (`status.py`, `llm_tabulate.py`).
 - `tests/`: unit tests, including scripted traders that validate the deviation
@@ -93,16 +91,15 @@ outputs are the only "data" that cannot be regenerated exactly:
 ## Instructions
 
 1. Tests: `PYTHONPATH=src pytest`.
-2. Rebuild every table, figure and quoted number of the ACL version from the
-   included results and compile it: `paper/build_acl.sh`. For the longer
-   versions, run the same scripts and compile `main_rfs.tex` or `main_v2.tex`.
-3. Rerun experiments (optional): Q-learning `./experiments/run_all.sh`;
+2. Run the experiments: Q-learning `./experiments/run_all.sh`;
    language-model batches `experiments/llm_pilot.sh`, `llm_noise.sh`,
    `llm_thinking.sh`, `llm_paraphrase.sh`, `llm_escalation.sh`,
    `llm_round2.sh`; hosted models `experiments/llm_api.sh` and
    `llm_api_round2.sh` (need `OPENAI_API_KEY`; spending is capped in
-   `OpenAIBackend`); GRPO `experiments/grpo_train.py` with the arguments stored
-   in each run's `results/grpo/<run>/config.json`, then `grpo_audit.sh`.
+   `OpenAIBackend`); GRPO `experiments/grpo_train.py` with the settings given
+   in the paper's appendix (`--game pricing` for the pricing game; each run
+   stores its arguments in `results/grpo/<run>/config.json`), then
+   `grpo_audit.sh` (or `grpo_pricing_audit.sh`).
    Pricing agents: `experiments/llm_bertrand.sh <gpu> <model> <tag>
    "duopoly:1 duopoly:10 myopic:1 trigger:1"`; the protocol of Fish et al.:
    `experiments/llm_bertrand.py --style fish --prefix P1 --model
@@ -114,49 +111,19 @@ outputs are the only "data" that cannot be regenerated exactly:
    rule disclosed: `experiments/llm_disclose.sh`. A/A tests:
    `experiments/llm_pilot.py --aa-test`. Every run stores its full arguments in
    its JSON output.
-4. Every deviation test pooled in the paper is listed, with its run, model,
+3. Every deviation test pooled in the paper is listed, with its run, model,
    condition, depth, information structure and estimate, in
    `results/deviation_tests.csv` (written by `experiments/null_bounds.py`).
 
-## List of tables and figures
-
-ACL version (`paper/main_acl.tex`; all built by `paper/build_acl.sh`):
-
-| Exhibit | Program | Inputs |
-|---|---|---|
-| Fig. 1 (`fig_teaser`), Fig. 3 (`fig_tests`), Fig. 4 (`fig_depth`), Fig. 5 (`fig_rl`), appendix figures (`fig_lags`, `fig_app_depth`, `fig_app_rl_control`, `fig_app_mechanism`) | `paper/make_acl_figures.py` | `results/llm_*`, `results/grpo_audit`, `results/exp5_controls`, `results/bertrand`, `results/mechanism`, `results/pricing_summary.json`, `results/fish_regression.json`, `results/null_bounds.json` |
-| Fig. 2 (overview) | TikZ in `paper/acl_sections/fig_overview.tex` | none |
-| Table 1 (`table_audit`) | `paper/make_acl_tables.py` | as Fig. 1 |
-| Table 2 (`table_prompts`) | `experiments/prompt_sensitivity.py` | `results/llm_pilot`, `results/llm_prompts`, `results/llm_models`, `results/llm_disclose` |
-| Table 3 (models) | written in `paper/acl_sections/appendix.tex` | run arguments in each JSON |
-| Tables 4, 6, 7 (`table_drivers_acl`, `table_middepth`, `table_llm`) | `paper/make_llm_tables.py` | `results/llm_pilot`, `results/llm_api`, `results/llm_models`, `results/llm_talk`, `results/grpo_audit` |
-| Table 5 (`table_models`) | `paper/make_acl_models.py` | `results/llm_models`, `results/llm_api`, `results/llm_pilot` |
-| Table 8 (`table_pricing`) | `experiments/pricing_summary.py` (after `fish_regression.py`) | `results/llm_bertrand` |
-| Table 9 (`table_fish`) | `experiments/fish_summary.py`, `experiments/fish_regression.py` | `results/llm_fish` |
-| Table 10 (`table_traces`) | `paper/make_trace_table.py` | `results/trace_judge.json`, raw responses |
-| Table 11 (`table_annotation`) | `experiments/annotation_agreement.py` | `results/annotation_*.json` |
-| Table 12 (`table_talk`) | `experiments/talk_summary.py` (after `talk_judge.py`) | `results/llm_talk`, `results/talk_judge.json` |
-| Numbers quoted in the text (`paper/numbers_*.tex`) | the scripts above, plus `null_bounds.py`, `aa_summary.py`, `disclose_summary.py`, `dou_lownoise.py`, `escalation_summary.py` | as above |
-
-Longer versions:
-
-| Exhibit | Program | Inputs |
-|---|---|---|
-| Q-learning tables (`table_core`, `table_design`, `table_dou`, `table_faithful`, `table_robust`, `table_shared`, `table_validation`, `table_binning`, `table_deep`, `table_audit`) and figures (`fig_alpha`, `fig_core`, `fig_design`, `fig_deviation`, `fig_dou`, `fig_mechanism`, `fig_shared`, `fig_snr`, `fig_sustain`) | `paper/make_results.py` | `results/exp*`, `results/bertrand`, `results/quotes`, `results/mechanism`, `results/theory` |
-| `fig_llm_depth` | `paper/make_llm_figures.py` | `results/llm_pilot/qwen3_8b_*` |
-| `table_llm` (audit of language-model traders) | `paper/make_llm_tables.py` | `results/llm_pilot`, `results/llm_api`, `results/grpo_audit` |
-| Numbers quoted in the text | `results/NOTES.md`, `results/LLM_NOTES.md` (each with its source run) | as listed there |
-
 ## Deposit
 
-To do before submission: deposit this repository and the trained adapters
-(`results/grpo/*/adapter_*`) in a public archive (e.g. Zenodo or openICPSR) and
-add the DOI here.
+To do before submission: deposit this repository and the trained adapters in a
+public archive (e.g. Zenodo or openICPSR) and add the DOI here.
 
 ## Use of AI tools
 
-The code, experiments and draft text were developed with substantial
-assistance from an AI coding assistant (Anthropic's Claude, via Claude Code).
+The code and experiments were developed with substantial assistance from an
+AI coding assistant (Anthropic's Claude, via Claude Code).
 The author reviewed the code and results and is responsible for all content.
 The language models studied in the paper are research subjects, listed above
 with their versions.

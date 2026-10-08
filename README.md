@@ -1,6 +1,6 @@
 # Is anyone enforcing the cartel? Auditing collusion claims about LLM agents
 
-Code, results and paper for an audit of collusion among learning traders in a
+Code for an audit of collusion among learning traders in a
 repeated Kyle (1985) market: whether low trading is collusion (sustained by
 the threat of punishment) or an artefact of how agents decide and learn. The
 audit (paired deviation tests with shared sampling seeds, placebos, scale
@@ -8,21 +8,17 @@ sweeps, positive controls) is applied to tabular Q-learners, ten LLMs trading
 in context (seven open-weight models and three OpenAI models, with and without
 reasoning) and LLMs trained by GRPO in self-play, and to LLM pricing agents in a
 logit-Bertrand game, including a re-run of the protocol of Fish et al. with
-gpt-oss-20b.
+gpt-oss-20b, gpt-oss-120b and GPT-5.2.
 
-- **Paper (ACL format):** `paper/main_acl.tex`, built by `paper/build_acl.sh`.
-  A longer journal version is `paper/main_rfs.tex`; `paper/main_v2.tex` is the
-  working paper.
-- **Replication:** `REPLICATION.md` (requirements, run times, how every result
-  was produced). All intermediate results are in `results/`, so the paper can
-  be rebuilt without rerunning any experiment.
+- **Replication:** `REPLICATION.md` (requirements, run times, how to run every
+  experiment). Runs write their outputs to `results/`, which is not part of this
+  repository.
 
 ## Quick start
 
 ```bash
-pip install -e ".[dev]" matplotlib numba      # simulation, tables, figures
+pip install -e ".[dev]" matplotlib numba      # simulation and analysis
 PYTHONPATH=src pytest                         # unit tests (about 1 minute)
-paper/build_acl.sh                            # rebuild every table, figure and number; compile the PDF
 ```
 
 Rerunning the language-model experiments needs vLLM (open-weight models) and
@@ -35,10 +31,12 @@ an OpenAI API key (`OPENAI_API_KEY`) for the hosted models; see `REPLICATION.md`
   backends with spend caps) and the paired deviation test with shared
   sampling seeds.
 - `src/kylecollusion/grpo.py`: GRPO self-play with LoRA (common random numbers
-  within groups, discounted return-to-go, gamma = 0 as myopic control) and a
-  scripted trigger rival as a positive control.
+  within groups, discounted return-to-go, gamma = 0 as myopic control) in the
+  Kyle market or the pricing game (`--game pricing`), and a scripted trigger
+  rival as a positive control.
 - Runners: `experiments/llm_pilot.py` (one condition), `experiments/grpo_train.py`,
-  `experiments/grpo_audit.sh`, `experiments/llm_*.sh`; `experiments/status.py`
+  `experiments/grpo_audit.sh`, `experiments/grpo_pricing_audit.sh`,
+  `experiments/llm_*.sh`; `experiments/status.py`
   for monitoring; `experiments/llm_tabulate.py` for quick tables.
 - Model coverage and robustness: `experiments/llm_models.sh` (depth test for
   one open-weight model), `llm_r1.sh` (DeepSeek-R1-Distill), `llm_gpt55.sh`
@@ -85,7 +83,6 @@ an OpenAI API key (`OPENAI_API_KEY`) for the hosted models; see `REPLICATION.md`
   to competing Q-learning dealers under adverse selection (`quotes.py`).
 - **Sustainability:** Green-Porter style bounds (`sustain.py`) on how much
   collusion trigger strategies can sustain given how visible deviations are.
-- **Audit protocol:** the diagnostics as a five-step procedure (paper, Sec. 6).
 
 ## Model
 
@@ -123,9 +120,6 @@ PYTHONPATH=src python experiments/rare_states.py          # off-path states and 
 PYTHONPATH=src python experiments/bertrand_validation.py                   # Calvano et al. validation
 PYTHONPATH=src python experiments/bertrand_validation.py --market quotes    # dealers
 PYTHONPATH=src python experiments/sustain_curves.py                        # sustainability bounds
-python paper/make_results.py                 # figures + numbers.tex
-cd paper && latexmk -pdf main.tex           # working paper
-cd paper && latexmk -pdf main_ec.tex        # EC submission (anonymous, 18-page body, EC'26 style)
 ```
 
 Experiment specs are in `experiments/grids/*.json`; `experiments/exp4.sh`
@@ -148,7 +142,6 @@ src/kylecollusion/
   metrics.py       collusion indices and per-session outcomes
   run.py           train, evaluate, test; JSON output
 experiments/       sweep runner, grids, queue, mechanism experiment, tabulation
-results/           result JSON per run, NOTES.md
-paper/             LaTeX sources, figures, make_results.py
+results/           run outputs (written by the runs; not in the repository)
 tests/             theory, market, agents, diagnostics
 ```

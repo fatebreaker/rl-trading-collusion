@@ -98,6 +98,7 @@ def main():
                      f"{f(r['judge_opus']['kappa'])} & {f(r['judge_gpt55']['kappa'])} & "
                      f"{f(r['opus_gpt55']['kappa'])} & {f(r['fleiss'])} \\\\")
     lines += ["\\bottomrule", "\\end{tabular}"]
+    os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     open(os.path.join(ROOT, "paper", "table_annotation.tex"), "w").write("\n".join(lines) + "\n")
 
     u = out["uninstructed"]

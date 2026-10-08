@@ -1,4 +1,5 @@
-"""GRPO training of language-model traders in the repeated Kyle market.
+"""GRPO training of language-model traders in the repeated Kyle market, or of
+language-model pricing agents in the repeated logit-Bertrand game (game="pricing").
 
 Self-play: every informed trader is the same LoRA-adapted policy, prompted
 exactly as the in-context traders in `llm_traders` (its own history, the
@@ -69,6 +70,8 @@ class GRPOConfig:
     # punish x V for punish_len periods after the policy's order exceeds
     # coop x |V| + tol (perfect monitoring). coop/punish default to the
     # frozen-lambda joint optimum per trader and twice the Nash intensity.
+    game: str = "kyle"  # "kyle" (traders) or "pricing" (logit-Bertrand duopoly, our pricing prompt)
+    price_scale: float = 1.0  # pricing: currency unit
     rival: str = "self"
     monitor: bool = False  # show the rival's past orders in the prompt (self-play)
     coop: float = 0.0
@@ -204,6 +207,49 @@ def rollout(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     return samples, stats
 
 
+def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
+    """Self-play in the logit-Bertrand duopoly: both firms are the policy, prompted as the
+    in-context pricing agents of `llm_pricing` and paid their profit. Demand is deterministic,
+    so the sessions of a group differ only through the prices the policy sampled."""
+    from .llm_pricing import LLMPricers, PricingConfig, PricingMarket, act_many
+
+    S = cfg.groups * cfg.group_size
+    pcfg = PricingConfig(scale=cfg.price_scale, history=cfg.history, notes=cfg.notes,
+                         temperature=cfg.temperature, max_tokens=cfg.max_tokens)
+    env = PricingMarket(pcfg, S)
+    pricers = LLMPricers(env, pcfg, seed=seed)
+    T = cfg.periods
+    profit = np.zeros((T, S, 2))
+    prices = np.zeros((T, S, 2))
+    backend.records = []
+    for t in range(T):
+        p = act_many([(env, pricers)], backend)[0]
+        q, pi = env.step(p)
+        pricers.record(np.clip(p, 0.0, 10.0 * env.bcfg.cost), q, pi)
+        profit[t], prices[t] = pi, p
+    records = backend.records
+    backend.records = None
+    adv = group_advantages(profit, cfg.gamma, cfg.group_size)
+    samples = []
+    for t in range(T):
+        for k, (p_ids, o_ids) in enumerate(records[t]):
+            s, i = divmod(k, 2)
+            if o_ids:
+                samples.append((p_ids, o_ids, float(adv[t, s, i])))
+    b = env.bench
+    idx = (np.clip(prices, 0.0, 10.0 * env.bcfg.cost).mean(-1) - b["p_nash"]) / (b["p_mono"] - b["p_nash"])
+    stats = {
+        "price_index": float(idx.mean()),
+        "price_index_second_half": float(idx[T // 2:].mean()),
+        "price_sd_across_sessions": float(prices[T // 2:].mean((0, 2)).std()),
+        "profit_over_nash": float(profit.mean() / b["pi_nash"]),
+        "zero_adv_share": float(np.mean([a == 0.0 for _, _, a in samples])) if samples else 1.0,
+        "parse_fail": pricers.n_fail / max(pricers.n_calls, 1),
+        "resp_tokens": float(np.mean([len(o) for _, o, _ in samples])) if samples else 0.0,
+    }
+    return samples, stats
+
+
 def policy_gradient_step(model, opt, samples, cfg: GRPOConfig, device) -> tuple[float, float]:
     """One on-policy update: maximise [sum(adv * log pi) + c * entropy] / n_tokens.
     Returns (loss, mean response-token entropy)."""
@@ -297,7 +343,8 @@ def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
     tmp = os.path.join(out_dir, "adapter_latest")
     for it in range(start, cfg.iterations):
         t0 = time.time()
-        samples, stats = rollout(backend, cfg, seed=cfg.seed * 100003 + it)
+        play = rollout_pricing if cfg.game == "pricing" else rollout
+        samples, stats = play(backend, cfg, seed=cfg.seed * 100003 + it)
         t1 = time.time()
         loss, entropy = policy_gradient_step(model, opt, samples, cfg, train_device)
         t2 = time.time()

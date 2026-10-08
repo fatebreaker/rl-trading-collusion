@@ -8,16 +8,11 @@ dist/
 venv/
 .env
 checkpoints/
-results/**/*.log
-results/*.log
 logs/
-results/.status_state.json
-results/grpo/*/adapter_*
-results/**/*.log.old
 
-# private: author details and drafts stay local
-paper/authors.tex
-paper/authors_cover.tex
-results/drafts/
-paper/main_rfs_cover.pdf
+# this repository holds the code only: the paper draft, the run outputs, the
+# submission archives and annotation files stay local
+paper/
+results/
 supplementary/
+human_eval_*
