@@ -65,7 +65,9 @@ def main():
                          cut_gain=(dc["cum_gain_dev"], dc["cum_gain_dev_ci95"]))
             g = reg.get(f"{tag}_{cond}")
             if g:
-                r.update(delta=(g["delta"], 1.96 * g["delta_se"]), br_slope=g["br_slope"])
+                r.update(br_slope=g["br_slope"])
+                if g["delta_se"] > 1e-8:  # prices that barely move make the regression degenerate
+                    r.update(delta=(g["delta"], 1.96 * g["delta_se"]))
             out[f"{tag}_{cond}"] = r
             key = f"Fish{mkey}{ckey}"
             macros[f"{key}Idx"] = f"{idx[0]:.2f}"
@@ -82,9 +84,10 @@ def main():
             if "response" in r:
                 macros[f"{key}Resp"] = f"{r['response'][0]:.2f}\\pm{r['response'][1]:.2f}"
                 macros[f"{key}CutGain"] = f"{r['cut_gain'][0]:+.2f}\\pm{r['cut_gain'][1]:.2f}"
+            if "br_slope" in r:
+                macros[f"{key}BR"] = f"{r['br_slope']:.2f}"
             if "delta" in r:
                 macros[f"{key}Reg"] = f"{r['delta'][0]:.2f}"
-                macros[f"{key}BR"] = f"{r['br_slope']:.2f}"
             rows.append((mname, cname, r))
     json.dump(out, open(os.path.join(ROOT, "results", "fish_summary.json"), "w"), indent=1)
     with open(os.path.join(ROOT, "paper", "numbers_fish.tex"), "w") as fh:

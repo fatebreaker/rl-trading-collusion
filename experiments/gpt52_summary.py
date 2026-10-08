@@ -68,20 +68,29 @@ def main():
     rows, last = texts("gpt52_high_duopoly_P1", T)
     sessions = []
     for s in range(S):
-        # stable: over the last 70 periods both prices stay within two cents of their final
-        # level and within a cent of each other
-        tail = P[s, -70:, :]
-        const = bool(np.abs(tail - P[s, -1:, :]).max() <= 0.0201
-                     and np.abs(tail[:, 0] - tail[:, 1]).max() <= 0.0201)
-        streak = 0  # final periods with both prices within a cent of each other
-        for e in (np.abs(P[s, :, 0] - P[s, :, 1]) <= 0.0101)[::-1]:
+        # stable for: final periods in which both prices stay within two cents of each other and
+        # of their final level; a session is stable if this holds for the last 70 periods
+        ok = (np.abs(P[s] - P[s, -1:]).max(1) <= 0.0201) & (np.abs(P[s, :, 0] - P[s, :, 1]) <= 0.0201)
+        streak = 0
+        for e in ok[::-1]:
             if not e:
                 break
             streak += 1
-        sessions.append({"session": s, "index_last10": idx[s, -10:, :].mean(0).round(2).tolist(),
+        last10 = idx[s, -10:, :].mean(0)
+        drop = float(idx[s, -1].mean() - idx[s, -20].mean())  # change over the last 20 periods
+        if streak >= 70:
+            pattern = "cartel-like" if last10.max() <= 1 else "above monopoly"
+        elif drop < -0.2:
+            pattern = "falling"
+        elif abs(last10[0] - last10[1]) > 0.5:
+            pattern = "asymmetric"
+        else:
+            pattern = "low"
+        sessions.append({"session": s, "index_last10": last10.round(2).tolist(), "index_last10_mean": float(last10.mean()),
                          "index_second_half": float(idx[s, T // 2:, :].mean()),
                          "profit_over_nash": fw["per_session"]["profit_over_nash"][s],
-                         "equal_streak": int(streak), "stable": bool(const),
+                         "stable_streak": int(streak), "stable": streak >= 70, "change_last20": drop,
+                         "pattern": pattern,
                          "match_rules": sum(bool(MATCH.search(last.get((s, i), ""))) for i in (0, 1))})
     stable = [x for x in sessions if x["stable"]]
     cartel = [x for x in stable if x["index_last10"][0] <= 1]
@@ -95,6 +104,24 @@ def main():
     macros.update({"GptS": S, "GptT": T, "GptStableN": len(stable), "GptCartelN": len(cartel),
                    "GptWar": f"{100 * war:.0f}", "GptCoop": f"{100 * coop:.0f}",
                    "GptMatchPlans": n_match, "GptPlans": n_plans})
+    # profit over periods 51-100, session by session: mean and t interval across sessions
+    from scipy import stats
+    prof = np.asarray(fw["per_session"]["profit_over_nash"], float)
+    half = stats.t.ppf(0.975, S - 1) * prof.std(ddof=1) / np.sqrt(S)
+    out["forward"]["profit"] = {"mean": float(prof.mean()), "t95": float(half), "above_nash": int((prof > 1).sum()),
+                                "p_mean_above_nash": float(stats.ttest_1samp(prof, 1.0).pvalue)}
+    macros.update({"GptProfMean": f"{prof.mean():.2f}",
+                   "GptProfRange": f"${prof.mean() - half:.2f}$--${prof.mean() + half:.2f}$",
+                   "GptProfAboveN": int((prof > 1).sum())})
+    pat = {k: [x for x in sessions if x["pattern"] == k] for k in ("low", "falling", "asymmetric")}
+    num = {1: "one", 2: "two", 3: "three", 4: "four"}
+    if pat["low"]:
+        v = sorted(x["index_last10_mean"] for x in pat["low"])
+        macros.update({"GptLowN": num.get(len(v), len(v)), "GptLowIdx": " and ".join(f"${x:.2f}$" for x in v)})
+    macros["GptFallingN"] = num.get(len(pat["falling"]), len(pat["falling"]))
+    if pat["asymmetric"]:
+        a0 = pat["asymmetric"][0]["index_last10"]
+        macros["GptAsymIdx"] = f"${min(a0):.2f}$ and ${max(a0):.2f}$"
     if cartel:
         lo, hi = min(x["index_last10"][0] for x in cartel), max(x["index_last10"][0] for x in cartel)
         plo = min(x["profit_over_nash"] for x in cartel)
@@ -103,7 +130,7 @@ def main():
         macros.update({"GptCartelIdx": f"${lo:.2f}$" if lo == hi else f"${lo:.2f}$ and ${hi:.2f}$",
                        "GptCartelProf": (f"${plo:.2f}$" if f"{plo:.2f}" == f"{phi:.2f}"
                                          else f"${plo:.2f}$--${phi:.2f}$"),
-                       "GptCartelStreak": min(x["equal_streak"] for x in cartel)})
+                       "GptCartelStreak": min(x["stable_streak"] for x in cartel)})
     if above:
         macros.update({"GptAboveIdx": f"{above[0]['index_last10'][0]:.2f}",
                        "GptAboveProf": f"{above[0]['profit_over_nash']:.2f}"})
@@ -168,8 +195,8 @@ def main():
                        "GptRetestCost": f"{r['cost']:.0f}"})
     if rt:  # per session (two sessions; events within a session are not independent)
         ps = out["retest"]["per_session"]
-        units = [f"{ps[k]['per_unit_by_lag'][1]:.2f}" for k in sorted(ps, key=int)]
-        gains = [f"{ps[k]['gain']:+.2f}" for k in sorted(ps, key=int)]
+        units = [f"${ps[k]['per_unit_by_lag'][1]:.2f}$" for k in sorted(ps, key=int)]
+        gains = [f"${ps[k]['gain']:.2f}$" for k in sorted(ps, key=int)]
         macros.update({"GptRetestSessUnit": " and ".join(units), "GptRetestSessGain": " and ".join(gains)})
     # placebo at the cartel state: session 4 rebuilt with the myopic objective (same history and plans)
     mp = load("gpt52_high_duopoly_P1_session4_cut_myopic")
@@ -184,10 +211,17 @@ def main():
                                           "forward_lag1": fw4["per_unit_by_lag"][1], "cost": mp["usage"]["cost"]}
         macros.update({"GptMyoStateN": int(lag1.size), "GptMyoStateUnit": f"{lag1.mean():.2f}",
                        "GptMyoStateRange": f"${lag1.min():.2f}$--${lag1.max():.2f}$",
+                       "GptMyoStateList": ", ".join(f"${x:.2f}$" for x in lag1[:-1]) + f" and ${lag1[-1]:.2f}$",
                        "GptMyoStateSession": int(mp["sessions"][0]) + 1})
-    if dc:  # conservative bound: intervals across events, three per session (design effect up to sqrt 3)
+    if dc:  # conservative bound: the main run's tests keep only event-level summaries, so take the
+        # worst case, events within a session identical (intra-class correlation 1): then the S session
+        # means carry all the information, and the bound is a t interval on S - 1 degrees of freedom
+        from scipy import stats
         u, c = per_unit(dc)
-        macros["GptCutLowDE"] = f"{u[1] - np.sqrt(3) * c[1]:.2f}"
+        n, m = dc["n_events"], dc["n_events"] / S
+        sd_n = c[1] / 1.96 * np.sqrt(n)                    # sd across events
+        sd_s = sd_n * np.sqrt((n - 1) / (m * (S - 1)))     # sd across session means if events repeat
+        macros["GptCutLowDE"] = f"{u[1] - stats.t.ppf(0.975, S - 1) * sd_s / np.sqrt(S):.2f}"
     # what a 10% cut from the cartel state earns against rivals that do not punish (analytic)
     sys.path.insert(0, os.path.join(ROOT, "experiments"))
     from fish_regression import br_slope  # noqa: E402
@@ -229,14 +263,14 @@ def main():
         fh.write("% generated by experiments/gpt52_summary.py\n")
         for k, v in macros.items():
             fh.write(f"\\newcommand{{\\{k}}}{{{v}}}\n")
-    L = ["\\begin{tabular}{@{}ccccccc@{}}", "\\toprule",
-         " & \\multicolumn{2}{c}{price index, last 10} & index, & profit & within a cent & plans that \\\\",
-         "\\cmidrule(lr){2-3}",
-         "Session & firm 1 & firm 2 & periods 51--100 & / Nash & (final periods) & answer a cut \\\\", "\\midrule"]
+    L = ["\\begin{tabular}{@{}cccccccl@{}}", "\\toprule",
+         " & \\multicolumn{3}{c}{price index} & profit & stable & plans that & \\\\",
+         "\\cmidrule(lr){2-4}",
+         "Session & firm 1 & firm 2 & 51--100 & / Nash & for & answer a cut & pattern \\\\", "\\midrule"]
     for x in sessions:
         L.append(f"{x['session'] + 1} & ${x['index_last10'][0]:.2f}$ & ${x['index_last10'][1]:.2f}$ & "
-                 f"${x['index_second_half']:.2f}$ & ${x['profit_over_nash']:.2f}$ & {x['equal_streak']} & "
-                 f"{x['match_rules']} of 2 \\\\")
+                 f"${x['index_second_half']:.2f}$ & ${x['profit_over_nash']:.2f}$ & {x['stable_streak']} & "
+                 f"{x['match_rules']} of 2 & {x['pattern']} \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(ROOT, "paper", "table_gpt52.tex"), "w").write("\n".join(L) + "\n")
     print(json.dumps({k: v for k, v in macros.items()}, indent=1))
