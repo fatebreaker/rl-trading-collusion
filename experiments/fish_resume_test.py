@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "src"))
 from kylecollusion.llm_pricing import (LLMPricers, PricingConfig, PricingMarket,  # noqa: E402
                                        deviation_test, parse_fish, parse_price)
-from kylecollusion.llm_traders import BudgetExceeded, OpenAIBackend  # noqa: E402
+from kylecollusion.llm_traders import BudgetExceeded, OpenAIBackend, VLLMBackend  # noqa: E402
 
 
 def rebuild(run: dict, raw_path: str, sessions: list[int], objective: str | None = None):
@@ -86,6 +86,11 @@ def main(argv=None):
     ap.add_argument("--total-budget", type=float, default=140.0)
     ap.add_argument("--objective", default=None, choices=["long", "myopic"],
                     help="override the run's objective (placebo at the run's state)")
+    ap.add_argument("--backend", default="openai", choices=["openai", "vllm"])
+    ap.add_argument("--gpu-mem", type=float, default=0.88)  # vllm only, as the remaining flags
+    ap.add_argument("--dtype", default="auto")
+    ap.add_argument("--attention-backend", default=None)
+    ap.add_argument("--tp", type=int, default=1)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--out", default=None)
     a = ap.parse_args(argv)
@@ -102,10 +107,16 @@ def main(argv=None):
     if a.dry_run:
         print(pricers.fish_prompt(0, 0)[:1500] if cfg.style == "fish" else pricers.user_prompt(0, 0)[:1500])
         return
-    backend = OpenAIBackend(ra["model"], reasoning_effort=ra.get("reasoning_effort"), run_budget=a.run_budget,
-                            total_budget=a.total_budget, tag=os.path.basename(a.out or a.run),
-                            service_tier=ra.get("service_tier"),
-                            max_completion_tokens=ra.get("max_tokens") or 4000)
+    if a.backend == "vllm":  # an open-weight run, with the settings of its main run
+        backend = VLLMBackend(ra["model"], gpu_memory_utilization=a.gpu_mem, enable_thinking=ra.get("thinking", False),
+                              dtype=a.dtype, attention_backend=a.attention_backend,
+                              max_model_len=ra.get("max_model_len") or 8192, tensor_parallel_size=a.tp,
+                              reasoning_effort=ra.get("reasoning_effort"), max_num_seqs=ra.get("max_num_seqs"))
+    else:
+        backend = OpenAIBackend(ra["model"], reasoning_effort=ra.get("reasoning_effort"), run_budget=a.run_budget,
+                                total_budget=a.total_budget, tag=os.path.basename(a.out or a.run),
+                                service_tier=ra.get("service_tier"),
+                                max_completion_tokens=ra.get("max_tokens") or 4000)
     pricers.raw = []
     path = a.out or a.run.replace(".json", f"_resume_{a.mode}.json")
     events = []  # one deviation test per event, saved after each so a budget stop keeps them
@@ -123,7 +134,8 @@ def main(argv=None):
         test = {"mode": a.mode, "n_events": int(agg.shape[0] * agg.shape[2]), "horizon": a.horizon,
                 "per_event": {"rival_aggression": agg.tolist(), "deviation_size": size.tolist(), "gain": gain.tolist()}}
         out = {"run": os.path.relpath(a.run, ROOT), "sessions": sessions, "mode": a.mode, "objective": cfg.objective,
-               "test": test, "per_session": per_session, "usage": backend.usage, "complete": len(events) == a.events}
+               "test": test, "per_session": per_session, "usage": getattr(backend, "usage", None),
+               "complete": len(events) == a.events}
         json.dump(out, open(path, "w"), indent=1)
         if pricers.raw:
             with gzip.open(path.replace(".json", "_raw.jsonl.gz"), "wt") as fh:
