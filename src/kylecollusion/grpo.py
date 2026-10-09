@@ -71,6 +71,8 @@ class GRPOConfig:
     # coop x |V| + tol (perfect monitoring). coop/punish default to the
     # frozen-lambda joint optimum per trader and twice the Nash intensity.
     game: str = "kyle"  # "kyle" (traders) or "pricing" (logit-Bertrand duopoly, our pricing prompt)
+    # pricing: rival "self" (self-play) or "tft", a scripted rival that posts the policy's price of the
+    # previous period (tit-for-tat, starting at the monopoly price), so every cut is matched a period later
     price_scale: float = 1.0  # pricing: currency unit
     rival: str = "self"
     monitor: bool = False  # show the rival's past orders in the prompt (self-play)
@@ -208,34 +210,43 @@ def rollout(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
 
 
 def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
-    """Self-play in the logit-Bertrand duopoly: both firms are the policy, prompted as the
-    in-context pricing agents of `llm_pricing` and paid their profit. Demand is deterministic,
+    """The logit-Bertrand duopoly: in self-play both firms are the policy, prompted as the
+    in-context pricing agents of `llm_pricing` and paid their profit; with rival "tft" the
+    policy is firm 0 and firm 1 posts the policy's previous price. Demand is deterministic,
     so the sessions of a group differ only through the prices the policy sampled."""
     from .llm_pricing import LLMPricers, PricingConfig, PricingMarket, act_many
 
+    if cfg.rival not in ("self", "tft"):
+        raise ValueError(f"pricing rival must be 'self' or 'tft', not {cfg.rival!r}")
+    tft = cfg.rival == "tft"
     S = cfg.groups * cfg.group_size
     pcfg = PricingConfig(scale=cfg.price_scale, history=cfg.history, notes=cfg.notes,
                          temperature=cfg.temperature, max_tokens=cfg.max_tokens)
     env = PricingMarket(pcfg, S)
-    pricers = LLMPricers(env, pcfg, seed=seed)
+    pricers = LLMPricers(env, pcfg, seed=seed, active=[0] if tft else None)
     T = cfg.periods
     profit = np.zeros((T, S, 2))
     prices = np.zeros((T, S, 2))
+    prev = np.full(S, env.bench["p_mono"])  # the tit-for-tat rival opens at the monopoly price
     backend.records = []
     for t in range(T):
         p = act_many([(env, pricers)], backend)[0]
+        if tft:
+            p[:, 1] = prev
+            prev = np.clip(p[:, 0], 0.0, 10.0 * env.bcfg.cost)
         q, pi = env.step(p)
         pricers.record(np.clip(p, 0.0, 10.0 * env.bcfg.cost), q, pi)
         profit[t], prices[t] = pi, p
     records = backend.records
     backend.records = None
-    adv = group_advantages(profit, cfg.gamma, cfg.group_size)
+    act = pricers.active
+    adv = group_advantages(profit[:, :, act], cfg.gamma, cfg.group_size)  # policy firms only
     samples = []
     for t in range(T):
         for k, (p_ids, o_ids) in enumerate(records[t]):
-            s, i = divmod(k, 2)
+            s, j = divmod(k, len(act))
             if o_ids:
-                samples.append((p_ids, o_ids, float(adv[t, s, i])))
+                samples.append((p_ids, o_ids, float(adv[t, s, j])))
     b = env.bench
     idx = (np.clip(prices, 0.0, 10.0 * env.bcfg.cost).mean(-1) - b["p_nash"]) / (b["p_mono"] - b["p_nash"])
     stats = {
@@ -247,6 +258,11 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         "parse_fail": pricers.n_fail / max(pricers.n_calls, 1),
         "resp_tokens": float(np.mean([len(o) for _, o, _ in samples])) if samples else 0.0,
     }
+    if tft:  # the policy's own price index and profit
+        stats.update(policy_price_index_second_half=float(
+            ((np.clip(prices[T // 2:, :, 0], 0.0, 10.0 * env.bcfg.cost) - b["p_nash"])
+             / (b["p_mono"] - b["p_nash"])).mean()),
+            policy_profit_over_nash=float(profit[:, :, 0].mean() / b["pi_nash"]))
     return samples, stats
 
 
