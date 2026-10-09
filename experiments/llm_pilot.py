@@ -45,6 +45,8 @@ CONDITIONS = {
     "myopic": dict(n_informed=2, objective="myopic", show_rival=False),
     "solo": dict(n_informed=1, objective="long", show_rival=False),
     "triopoly": dict(n_informed=3, objective="long", show_rival=False),
+    "quadopoly": dict(n_informed=4, objective="long", show_rival=False),
+    "quintopoly": dict(n_informed=5, objective="long", show_rival=False),
     # framing x presence: identical prompt, with and without a real rival
     "duopoly_vague": dict(n_informed=2, objective="long", show_rival=False, rival_info="vague"),
     "solo_vague": dict(n_informed=1, objective="long", show_rival=False, rival_info="vague"),
