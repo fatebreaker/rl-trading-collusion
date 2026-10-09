@@ -72,7 +72,9 @@ class GRPOConfig:
     # frozen-lambda joint optimum per trader and twice the Nash intensity.
     game: str = "kyle"  # "kyle" (traders) or "pricing" (logit-Bertrand duopoly, our pricing prompt)
     # pricing: rival "self" (self-play) or "tft", a scripted rival that posts the policy's price of the
-    # previous period (tit-for-tat, starting at the monopoly price), so every cut is matched a period later
+    # previous period (tit-for-tat, starting at the monopoly price), so every cut is matched a period later,
+    # or "cheater", a scripted rival that cheats on the monopoly price unless a price war deters it
+    # (CheaterRival; cheat_prob, cheat_cut_min/max and deter_len set it)
     price_scale: float = 1.0  # pricing: currency unit
     rival: str = "self"
     monitor: bool = False  # show the rival's past orders in the prompt (self-play)
@@ -80,6 +82,65 @@ class GRPOConfig:
     punish: float = 0.0
     punish_len: int = 3
     tol: float = 0.3
+    cheat_prob: float = 0.5
+    cheat_cut_min: float = 0.10
+    cheat_cut_max: float = 0.25
+    deter_len: int = 10
+
+
+class CheaterRival:
+    """Scripted pricing rival that cheats on the monopoly price unless the policy deters it.
+
+    It posts the monopoly price p^M. From the third period on, unless deterred, it cheats with
+    probability `prob`, cutting its price by a share drawn from `cut` (draws shared by the sessions
+    of a group). The policy deters it for `deter_len` periods by answering a cheat, in the next
+    period, with a price war: a price at least `margin` x (p^M - p^N) below both the Nash price and
+    the cheat. That is below the policy's best response to the cheat, so the war costs profit in the
+    period it is fought and pays only through the cheats it deters: a forward-looking policy gains by
+    learning it, a myopic one does not. An unprovoked undercut by the policy (a price below
+    p^M - tol x (p^M - p^N) that does not answer a cheat) is answered by one period at the Nash price,
+    so the policy's best standing price is the monopoly price."""
+
+    def __init__(self, bench: dict, n_sessions: int, group_size: int, periods: int,
+                 rng: np.random.Generator, prob: float = 0.5, cut: tuple = (0.10, 0.25),
+                 deter_len: int = 10, margin: float = 0.22, tol: float = 0.1):
+        self.pM, self.pN = bench["p_mono"], bench["p_nash"]
+        span = self.pM - self.pN
+        self.margin, self.tol = margin * span, tol * span
+        G = n_sessions // group_size
+        self.u = np.repeat(rng.random((G, periods)), group_size, axis=0)
+        self.d = np.repeat(rng.uniform(cut[0], cut[1], (G, periods)), group_size, axis=0)
+        self.prob, self.deter_len = prob, deter_len
+        self.deterred_until = np.full(n_sessions, -1)
+        self.cheat_prev = np.zeros(n_sessions, bool)  # the rival cheated last period
+        self.cheat_prev2 = np.zeros(n_sessions, bool)  # ... two periods ago
+        self.own_prev = None  # the policy's last price
+        self.r_prev = np.full(n_sessions, self.pM)  # the rival's last price
+        self._cheat_now = np.zeros(n_sessions, bool)
+        self.n_cheats = self.n_answers = self.n_wars = self.n_unprovoked = 0
+        self.answer_prices: list[np.ndarray] = []  # the policy's prices in periods that answer a cheat
+
+    def price(self, t: int) -> np.ndarray:
+        S = self.u.shape[0]
+        unprov = (np.zeros(S, bool) if self.own_prev is None
+                  else (self.own_prev < self.pM - self.tol) & ~self.cheat_prev2)
+        r = np.where(unprov, self.pN, self.pM)
+        cheat = ~unprov & (t >= 2) & (t > self.deterred_until) & (self.u[:, t] < self.prob)
+        self._cheat_now = cheat
+        self.n_unprovoked += int(unprov.sum())
+        return np.where(cheat, (1.0 - self.d[:, t]) * self.pM, r)
+
+    def observe(self, t: int, p_policy: np.ndarray, r: np.ndarray) -> None:
+        """Record period t: the policy's price (which may answer last period's cheat) and the rival's."""
+        war = self.cheat_prev & (p_policy <= np.minimum(self.pN, self.r_prev) - self.margin)
+        self.deterred_until = np.where(war, t + self.deter_len, self.deterred_until)
+        if self.cheat_prev.any():
+            self.answer_prices.append(p_policy[self.cheat_prev])
+        self.n_answers += int(self.cheat_prev.sum())
+        self.n_wars += int(war.sum())
+        self.n_cheats += int(self._cheat_now.sum())
+        self.cheat_prev2, self.cheat_prev = self.cheat_prev, self._cheat_now
+        self.own_prev, self.r_prev = np.array(p_policy, float), np.array(r, float)
 
 
 class GroupRNG:
@@ -216,25 +277,34 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     so the sessions of a group differ only through the prices the policy sampled."""
     from .llm_pricing import LLMPricers, PricingConfig, PricingMarket, act_many
 
-    if cfg.rival not in ("self", "tft"):
-        raise ValueError(f"pricing rival must be 'self' or 'tft', not {cfg.rival!r}")
-    tft = cfg.rival == "tft"
+    if cfg.rival not in ("self", "tft", "cheater"):
+        raise ValueError(f"pricing rival must be 'self', 'tft' or 'cheater', not {cfg.rival!r}")
+    tft, cheater = cfg.rival == "tft", cfg.rival == "cheater"
+    scripted = tft or cheater
     S = cfg.groups * cfg.group_size
     pcfg = PricingConfig(scale=cfg.price_scale, history=cfg.history, notes=cfg.notes,
                          temperature=cfg.temperature, max_tokens=cfg.max_tokens)
     env = PricingMarket(pcfg, S)
-    pricers = LLMPricers(env, pcfg, seed=seed, active=[0] if tft else None)
+    pricers = LLMPricers(env, pcfg, seed=seed, active=[0] if scripted else None)
     T = cfg.periods
     profit = np.zeros((T, S, 2))
     prices = np.zeros((T, S, 2))
     prev = np.full(S, env.bench["p_mono"])  # the tit-for-tat rival opens at the monopoly price
+    if cheater:
+        rival = CheaterRival(env.bench, S, cfg.group_size, T, np.random.default_rng(seed + 104729),
+                             prob=cfg.cheat_prob, cut=(cfg.cheat_cut_min, cfg.cheat_cut_max),
+                             deter_len=cfg.deter_len)
     backend.records = []
     for t in range(T):
         p = act_many([(env, pricers)], backend)[0]
         if tft:
             p[:, 1] = prev
             prev = np.clip(p[:, 0], 0.0, 10.0 * env.bcfg.cost)
+        elif cheater:
+            p[:, 1] = rival.price(t)
         q, pi = env.step(p)
+        if cheater:
+            rival.observe(t, np.clip(p[:, 0], 0.0, 10.0 * env.bcfg.cost), p[:, 1])
         pricers.record(np.clip(p, 0.0, 10.0 * env.bcfg.cost), q, pi)
         profit[t], prices[t] = pi, p
     records = backend.records
@@ -258,11 +328,17 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         "parse_fail": pricers.n_fail / max(pricers.n_calls, 1),
         "resp_tokens": float(np.mean([len(o) for _, o, _ in samples])) if samples else 0.0,
     }
-    if tft:  # the policy's own price index and profit
+    if scripted:  # the policy's own price index and profit
         stats.update(policy_price_index_second_half=float(
             ((np.clip(prices[T // 2:, :, 0], 0.0, 10.0 * env.bcfg.cost) - b["p_nash"])
              / (b["p_mono"] - b["p_nash"])).mean()),
             policy_profit_over_nash=float(profit[:, :, 0].mean() / b["pi_nash"]))
+    if cheater:  # how often the rival cheats and how the policy answers
+        ans = np.concatenate(rival.answer_prices) if rival.answer_prices else np.array([])
+        stats.update(cheats_per_session=rival.n_cheats / S, unprovoked_per_session=rival.n_unprovoked / S,
+                     war_share=rival.n_wars / max(rival.n_answers, 1),
+                     answer_price_index=float(((ans - b["p_nash"]) / (b["p_mono"] - b["p_nash"])).mean())
+                     if ans.size else float("nan"))
     return samples, stats
 
 

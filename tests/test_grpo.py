@@ -80,3 +80,42 @@ def test_trigger_rival_punishes_deviations_only():
     assert st_coop["policy_profit"] > st_dev["policy_profit"]
     # the one-shot best response to cooperation is to trade more
     assert st_dev["policy_br_to_coop"] > coop
+
+
+def test_cheater_rival_is_deterred_by_a_price_war_only():
+    from kylecollusion.grpo import CheaterRival
+    from kylecollusion.llm_pricing import pricing_benchmarks
+
+    b = pricing_benchmarks(1.0)
+    pM, pN = b["p_mono"], b["p_nash"]
+    S, G, T = 40, 4, 16
+
+    def play(answer):
+        """The policy holds p^M and answers each cheat with `answer(cheat price)`."""
+        rv = CheaterRival(b, S, G, T, np.random.default_rng(0), prob=0.5, deter_len=10)
+        own = np.full(S, pM)
+        cheats = []
+        for t in range(T):
+            r = rv.price(t)
+            p0 = np.where(rv.cheat_prev, answer(rv.r_prev), pM)
+            rv.observe(t, p0, r)
+            cheats.append(r < pM - 1e-9)
+            own = p0
+        return rv, np.array(cheats)
+
+    hold, c_hold = play(lambda rp: np.full(rp.shape, pM))
+    war, c_war = play(lambda rp: np.minimum(pN, rp) - 0.15)
+    best_resp, c_br = play(lambda rp: rp)  # matching the cheat is no war: no deterrence
+    assert hold.n_cheats > 0 and hold.n_wars == 0 and hold.n_unprovoked == 0
+    assert war.n_wars > 0 and war.n_cheats < hold.n_cheats
+    assert best_resp.n_wars == 0 and best_resp.n_cheats == hold.n_cheats
+    assert best_resp.n_unprovoked == 0  # an undercut that answers a cheat is provoked
+    # after a war, no cheat for deter_len periods
+    s = np.where(c_war[:, :].any(0))[0][0]
+    t0 = np.where(c_war[:, s])[0][0]
+    assert not c_war[t0 + 2:t0 + 12, s].any()
+    # an unprovoked undercut is answered by one period at the Nash price
+    rv = CheaterRival(b, S, G, T, np.random.default_rng(0), prob=0.0)
+    rv.observe(0, np.full(S, pM), rv.price(0))
+    rv.observe(1, np.full(S, pM - 0.2), rv.price(1))
+    assert np.allclose(rv.price(2), pN)
