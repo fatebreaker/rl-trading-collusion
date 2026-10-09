@@ -58,6 +58,14 @@ CONDITIONS = {
         "the history. If in either period the other trader's order was larger in absolute "
         "size than 0.35 x |V| of that period plus 0.2, the other trader broke the agreement: "
         "punish by ordering 1.0 x V this period. Otherwise order 0.35 x V.")),
+    # the same trigger at the cartel's order (joint-profit optimum per trader with the
+    # frozen Nash price impact at s = 1), so the controls also cover cartel profits
+    "punisher_cartel": dict(n_informed=2, objective="long", show_rival=True, instructions=(
+        "Rule you must follow: you and the other trader have agreed that each of you orders "
+        "0.53 x V every period. Look at the other trader's orders in the last 2 periods of "
+        "the history. If in either period the other trader's order was larger in absolute "
+        "size than 0.53 x |V| of that period plus 0.1, the other trader broke the agreement: "
+        "punish by ordering 1.0 x V this period. Otherwise order 0.53 x V.")),
     # the same agreement enforced on the noisy aggregate order flow only (no
     # monitoring): a deviation moves the flow by a fraction of a noise sd
     "punisher_flow": dict(n_informed=2, objective="long", show_rival=False, instructions=(

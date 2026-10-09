@@ -19,6 +19,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 RES = os.path.join(ROOT, "results", "llm_fish")
 PI_RATIO = 0.33749 / 0.22296  # monopoly / Nash profit
 MODELS = {"gptoss20b": ("gpt-oss-20b", "Oss"), "gptoss120b": ("gpt-oss-120b", "OssBig"),
+          "gptoss20b_high32k": ("gpt-oss-20b, high effort", "OssHigh"),
           "gpt52_high": ("GPT-5.2, high effort", "GptFive"), "qwen3_32b": ("Qwen3-32B", "QwenBig")}
 CONDS = {"duopoly_P1": ("P1", "POne"), "duopoly_P2": ("P2", "PTwo"),
          "myopic_P1": ("P1, myopic", "Myopic"), "duopoly_P1_k10": ("P1, prices $\\times10$", "Ten")}
@@ -27,6 +28,19 @@ CONDS = {"duopoly_P1": ("P1", "POne"), "duopoly_P2": ("P2", "PTwo"),
 def load(name):
     f = os.path.join(RES, f"{name}.json")
     return json.load(open(f)) if os.path.exists(f) and os.path.getsize(f) > 0 else None
+
+
+def resumed_cut(name):
+    """The 10% cut test re-run from a run's saved state (fish_resume_test.py), when the run's own
+    test was not kept: response per unit of the cut one period later and the deviator's gain,
+    with t intervals across sessions (each session's events averaged first)."""
+    r = load(f"{name}_resume_cut")
+    if not r or not r.get("complete"):
+        return None
+    ps = [v for v in r["per_session"].values() if v.get("lag1_per_event")]
+    lag1 = [float(np.mean(v["lag1_per_event"])) for v in ps]
+    gain = [float(np.mean(v["gain"])) for v in ps]
+    return {"response": ci(lag1), "cut_gain": ci(gain), "sessions": len(ps)}
 
 
 def ci(a):
@@ -65,6 +79,11 @@ def main():
                 r.update(response=(dc["rival_aggression"][1] / dc["deviation_size"],
                                    dc["rival_aggression_ci95"][1] / dc["deviation_size"]),
                          cut_gain=(dc["cum_gain_dev"], dc["cum_gain_dev_ci95"]))
+            elif resumed_cut(f"{tag}_{cond}"):  # the cut test run from the saved state
+                rc = resumed_cut(f"{tag}_{cond}")
+                r.update(response=rc["response"], cut_gain=rc["cut_gain"], resumed=True)
+            if tag == "gptoss20b_high32k" and not ("response" in r and dv):
+                continue  # reported once both of its deviation tests are complete
             g = reg.get(f"{tag}_{cond}")
             if g:  # exact best-response benchmarks at the run's prices (fish_regression.py)
                 r.update(br_slope=g["br_slope"], cut_slope=g["cut_slope"], brdev_slope=g["brdev_slope"])

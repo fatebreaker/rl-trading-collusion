@@ -113,10 +113,14 @@ def main():
             macros[f"GrpoPr{key}{f}"] = v[1:] if v.startswith("-0.00") else v  # no "-0.00"
     # training against the scripted tit-for-tat rival (positive control), and the trained policies paired
     # with themselves in the in-context audit
+    # and against the scripted rival that cheats unless a price war deters it
     for run, key in (("pricing_tft_0p6b_g09", "TftFwd"), ("pricing_tft_0p6b_g0", "TftMyo"),
-                     ("pricing_tft_1p7b_g09", "TftMidFwd"), ("pricing_tft_1p7b_g0", "TftMidMyo")):
+                     ("pricing_tft_1p7b_g09", "TftMidFwd"), ("pricing_tft_1p7b_g0", "TftMidMyo"),
+                     ("pricing_tft_0p6b_g09_s1", "TftFwdSeed"),
+                     ("pricing_cheat_0p6b_g09", "CheatFwd"), ("pricing_cheat_0p6b_g0", "CheatMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
-                                     "PairGain", "PairCutGain")}
+                                     "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
+                                     "PairBRUnit", "PairCutBench")}
         log = os.path.join(ROOT, "results", "grpo", run, "log.jsonl")
         if os.path.exists(log):
             L = [json.loads(x) for x in open(log) if x.strip()]
@@ -127,6 +131,14 @@ def main():
                           "curve": [[x["iteration"], x["policy_price_index_second_half"]] for x in L]}
             m.update(Idx=f"{r['train']['final_index']:.2f}", Prof=f"{r['train']['final_profit_over_nash']:.2f}",
                      Iters=str(len(L)))
+            if "war_share" in L[0]:  # cheater rival: how the policy answers cheats (last ten iterations)
+                r["train"].update(war_share=float(np.mean([x["war_share"] for x in tail])),
+                                  war_share_first=float(np.mean([x["war_share"] for x in L[:10]])),
+                                  answer_index=float(np.nanmean([x["answer_price_index"] for x in tail])),
+                                  cheats=float(np.mean([x["cheats_per_session"] for x in tail])),
+                                  war_curve=[[x["iteration"], x["war_share"]] for x in L])
+                m.update(War=f"{100 * r['train']['war_share']:.0f}", WarFirst=f"{100 * r['train']['war_share_first']:.0f}",
+                         AnsIdx=f"{r['train']['answer_index']:.2f}", Cheats=f"{r['train']['cheats']:.1f}")
         f1 = latest_audit(run)
         if f1:
             d = json.load(open(f1))
@@ -137,6 +149,12 @@ def main():
                 g, gc = d["deviation"]["cum_gain_dev"], d["deviation"]["cum_gain_dev_ci95"]
                 r["pair"]["br_gain"] = (g, gc)
                 m["PairGain"] = f"{g:+.2f}\\pm{gc:.2f}"
+                dv = d["deviation"]
+                if dv["deviation_size"] >= MIN_CUT:  # the best-response deviation per unit of the cut
+                    u = (dv["rival_aggression"][1] / dv["deviation_size"], dv["rival_aggression_ci95"][1] / dv["deviation_size"])
+                    r["pair"]["br_per_unit"] = u
+                    m["PairBRUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+            m["PairCutBench"] = f"{r['pair']['bench']['cut_slope']:.2f}"
             dc = d.get("deviation_cut")
             if dc and dc["deviation_size"] >= MIN_CUT:
                 u = (dc["rival_aggression"][1] / dc["deviation_size"], dc["rival_aggression_ci95"][1] / dc["deviation_size"])
