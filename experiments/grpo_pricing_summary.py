@@ -111,6 +111,47 @@ def main():
             m["Markup"] = f"{r['markup']:.2f}"
         for f, v in m.items():
             macros[f"GrpoPr{key}{f}"] = v[1:] if v.startswith("-0.00") else v  # no "-0.00"
+    # training against the scripted tit-for-tat rival (positive control), and the trained policies paired
+    # with themselves in the in-context audit
+    for run, key in (("pricing_tft_0p6b_g09", "TftFwd"), ("pricing_tft_0p6b_g0", "TftMyo"),
+                     ("pricing_tft_1p7b_g09", "TftMidFwd"), ("pricing_tft_1p7b_g0", "TftMidMyo")):
+        r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
+                                     "PairGain", "PairCutGain")}
+        log = os.path.join(ROOT, "results", "grpo", run, "log.jsonl")
+        if os.path.exists(log):
+            L = [json.loads(x) for x in open(log) if x.strip()]
+            tail = L[-10:]
+            r["train"] = {"iterations": len(L),
+                          "final_index": float(np.mean([x["policy_price_index_second_half"] for x in tail])),
+                          "final_profit_over_nash": float(np.mean([x["policy_profit_over_nash"] for x in tail])),
+                          "curve": [[x["iteration"], x["policy_price_index_second_half"]] for x in L]}
+            m.update(Idx=f"{r['train']['final_index']:.2f}", Prof=f"{r['train']['final_profit_over_nash']:.2f}",
+                     Iters=str(len(L)))
+        f1 = latest_audit(run)
+        if f1:
+            d = json.load(open(f1))
+            r["pair"] = {"index": tci(d["per_session"]["index"]), "profit_over_nash": tci(d["per_session"]["profit_over_nash"]),
+                         "bench": benchmarks(np.asarray(d["prices_sessions"], float), d["args"]["scale"])}
+            m.update(PairIdx=f"{r['pair']['index'][0]:.2f}", PairProf=f"{r['pair']['profit_over_nash'][0]:.2f}")
+            if d.get("deviation"):
+                g, gc = d["deviation"]["cum_gain_dev"], d["deviation"]["cum_gain_dev_ci95"]
+                r["pair"]["br_gain"] = (g, gc)
+                m["PairGain"] = f"{g:+.2f}\\pm{gc:.2f}"
+            dc = d.get("deviation_cut")
+            if dc and dc["deviation_size"] >= MIN_CUT:
+                u = (dc["rival_aggression"][1] / dc["deviation_size"], dc["rival_aggression_ci95"][1] / dc["deviation_size"])
+                r["pair"]["cut_per_unit"] = u
+                r["pair"]["cut_gain"] = (dc["cum_gain_dev"], dc["cum_gain_dev_ci95"])
+                m["PairCutUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+                m["PairCutGain"] = f"{dc['cum_gain_dev']:+.2f}\\pm{dc['cum_gain_dev_ci95']:.2f}"
+            f10 = f1.replace("_duopoly_k1.json", "_duopoly_k10.json")
+            if os.path.exists(f10) and os.path.getsize(f10) > 0:
+                d10 = json.load(open(f10))
+                r["pair"]["index_k10"] = tci(d10["per_session"]["index"])
+                m["PairTenIdx"] = f"{r['pair']['index_k10'][0]:.2f}"
+        out[run] = r
+        for f, v in m.items():
+            macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_grpopricing.tex"), "w") as fh:
