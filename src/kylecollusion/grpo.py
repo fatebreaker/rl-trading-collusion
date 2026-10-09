@@ -86,6 +86,7 @@ class GRPOConfig:
     cheat_cut_min: float = 0.10
     cheat_cut_max: float = 0.25
     deter_len: int = 10
+    war_margin: float = 0.22  # a deterring price war lies this share of (p^M - p^N) below Nash and the cheat
 
 
 class CheaterRival:
@@ -293,7 +294,7 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     if cheater:
         rival = CheaterRival(env.bench, S, cfg.group_size, T, np.random.default_rng(seed + 104729),
                              prob=cfg.cheat_prob, cut=(cfg.cheat_cut_min, cfg.cheat_cut_max),
-                             deter_len=cfg.deter_len)
+                             deter_len=cfg.deter_len, margin=cfg.war_margin)
     backend.records = []
     for t in range(T):
         p = act_many([(env, pricers)], backend)[0]
