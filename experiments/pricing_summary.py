@@ -51,14 +51,16 @@ def write_table(table):
     """Appendix table: every pricing condition with both deviation tests."""
     names = {"duopoly_k1": "duopoly", "duopoly_k1_s1": "duopoly, seed 1", "duopoly_k10": "duopoly, prices $\\times10$",
              "myopic_k1": "myopic objective", "myopic_k1_s1": "myopic, seed 1", "trigger_k1": "instructed trigger"}
-    pm = lambda m, c, sgn="": "--" if m is None else f"${m:{sgn}.2f}_{{\\pm{c:.2f}}}$"  # noqa: E731
+    pm = lambda m, c, sgn="": "--" if m is None else f"${0.0 if abs(m) < 0.005 else m:{sgn}.2f}_{{\\pm{c:.2f}}}$"  # noqa: E731
     reg = os.path.join(HERE, "..", "results", "fish_regression.json")
     reg = json.load(open(reg)) if os.path.exists(reg) else {}
 
     def onpath(key):  # on-path coefficient on the rival's lagged price (Fish et al., Table 1)
         r = reg.get(key)
-        if not r or r["delta"] != r["delta"]:
+        if not r:
             return "--"
+        if r["delta"] != r["delta"]:  # prices constant on the path: no variation to regress on
+            return "constant"
         tq = stats.t.ppf(0.975, r["clusters"] - 1)  # standard errors clustered by session
         return f"${r['delta']:.2f}_{{\\pm{tq * r['delta_se']:.2f}}}$"
 
@@ -79,7 +81,8 @@ def write_table(table):
             L.append(" & ".join([mname if k == 0 else "", names[c], pm(r["index"], r["index_ci95"]),
                                  pm(r["profit_over_nash"], r["profit_ci95"]),
                                  pm(r.get("pass_through"), r.get("pass_through_ci95"))
-                                 if r.get("pass_through") is not None or r.get("gain") is None else "n/a",
+                                 if r.get("pass_through") is not None or r.get("gain") is None
+                                 else pm(r.get("rival"), r.get("rival_ci95")) + "$^\\ast$",  # raw change
                                  pm(r.get("gain"), r.get("gain_ci95"), "+"),
                                  pm(r.get("cut_pass_through"), r.get("cut_pass_through_ci95")),
                                  pm(r.get("cut_gain"), r.get("cut_gain_ci95"), "+"), onpath(f"{tag}_{c}"),

@@ -136,12 +136,12 @@ def write_table(null, groups, ctrl_eff, res, effect, re_all, cum, floor):
                  + cells(ts, random_effects(var(ts), floor) if var(ts) else (float("nan"), float("nan"))) + " \\\\")
     L.append("\\midrule")
     L.append("All & " + cells(null, re_all) + " \\\\")
-    L.append("Each run once & " + cells(indep, (res["indep_pooled"], res["indep_pooled_ci"]), mde=False) + " \\\\")
+    L.append("Each run once & " + cells(indep, (res["indep_pooled"], res["indep_pooled_ci"])) + " \\\\")
     L.append("Agents earning at least Nash profit & "
-             + cells(above, (res["above_pooled"], res["above_pooled_ci"]), mde=False) + " \\\\")
+             + cells(above, (res["above_pooled"], res["above_pooled_ci"])) + " \\\\")
     m_cum, c_cum, cum_sig, ctrl_cum = cum
     L.append(f"Summed over six periods (instructed: {ctrl_cum:.2f}) & "
-             + cells(null, (m_cum, c_cum), mde=False, key=("cum_mean", "cum_ci")) + " \\\\")
+             + cells(null, (m_cum, c_cum), key=("cum_mean", "cum_ci")) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     open(os.path.join(ROOT, "paper", "table_nulls.tex"), "w").write("\n".join(L) + "\n")

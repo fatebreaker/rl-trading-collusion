@@ -66,7 +66,7 @@ def main():
         name = r["model"] if r["model"] != last else ""
         lines.append(f"{name} & {WORDING[r['wording']]} & {f(r['low'])} & {f(r['high'])} & {el} \\\\")
         last = r["model"]
-    lines += ["\\midrule", "Optimum & & $0.50$ & $2.00$ & $1.00$ \\\\", "\\bottomrule", "\\end{tabular}"]
+    lines += ["\\midrule", "Optimum & (theory) & $0.50$ & $2.00$ & $1.00$ \\\\", "\\bottomrule", "\\end{tabular}"]
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     open(os.path.join(ROOT, "paper", "table_prompts.tex"), "w").write("\n".join(lines) + "\n")
     lows = [r["low"][0] for r in rows if r["low"]]

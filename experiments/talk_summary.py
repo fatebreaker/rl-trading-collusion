@@ -54,7 +54,9 @@ def write_table(out):
         if r is None:
             continue
         j = judge.get(tag, {}).get("rates_nonzero_v")
-        jc = [pct(j[k]) for k in ("coord", "expand", "restrain", "threat")] if j else ["--"] * 4
+        if not j:  # a seed replicate whose messages were not judged: reported in the caption instead
+            continue
+        jc = [pct(j[k]) for k in ("coord", "expand", "restrain", "threat")]
         dev = [f"${r['rival']:.3f}_{{\\pm{r['rival_ci95']:.3f}}}$", pm(r["gain"], r["gain_ci95"])] if "rival" in r else ["--", "--"]
         L.append(" & ".join([*LABEL[tag], pm(r["delta"], r["delta_ci95"]), *dev, *jc]) + " \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
@@ -109,6 +111,7 @@ def main():
         macros[f"Talk{nm}NMsg"] = f"{len(nonempty):,}".replace(",", "{,}")
         if "rival" in r:
             macros[f"Talk{nm}Rival"] = f"{r['rival']:.3f}\\pm{r['rival_ci95']:.3f}"
+            macros[f"Talk{nm}Gain"] = f"{r['gain']:.2f}\\pm{r['gain_ci95']:.2f}"
     json.dump(out, open(os.path.join(ROOT, "results", "talk_summary.json"), "w"), indent=1, ensure_ascii=False)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_talk.tex"), "w") as fh:
