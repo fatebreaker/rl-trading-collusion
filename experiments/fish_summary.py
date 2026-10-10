@@ -20,7 +20,8 @@ RES = os.path.join(ROOT, "results", "llm_fish")
 PI_RATIO = 0.33749 / 0.22296  # monopoly / Nash profit
 MODELS = {"gptoss20b": ("gpt-oss-20b", "Oss"), "gptoss120b": ("gpt-oss-120b", "OssBig"),
           "gptoss20b_high32k": ("gpt-oss-20b, high effort", "OssHigh"),
-          "gpt52_high": ("GPT-5.2, high effort", "GptFive"), "qwen3_32b": ("Qwen3-32B", "QwenBig")}
+          "gpt52_high": ("GPT-5.2, high effort", "GptFive"), "qwen3_32b": ("Qwen3-32B", "QwenBig"),
+          "qwen3_8b": ("Qwen3-8B", "Qwen")}
 CONDS = {"duopoly_P1": ("P1", "POne"), "duopoly_P2": ("P2", "PTwo"),
          "myopic_P1": ("P1, myopic", "Myopic"), "duopoly_P1_k10": ("P1, prices $\\times10$", "Ten")}
 
