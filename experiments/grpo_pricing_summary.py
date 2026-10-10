@@ -27,7 +27,8 @@ MIN_CUT = 0.1  # smallest mean deviation (index units) for a response per unit
 RUNS = {"pricing_0p6b_g09": ("Qwen3-0.6B", 0.9, "SmallFwd"), "pricing_0p6b_g0": ("Qwen3-0.6B", 0.0, "SmallMyo"),
         "pricing_1p7b_g09": ("Qwen3-1.7B", 0.9, "MidFwd"), "pricing_1p7b_g0": ("Qwen3-1.7B", 0.0, "MidMyo")}
 FIELDS = ("Idx", "IdxCI", "Prof", "ProfIdx", "BRSize", "BRUnit", "BRBench", "Gain", "CutUnit", "CutBench",
-          "CutGain", "TenIdx", "TenProf", "Anchor", "Markup", "TenMarkup", "TrainIdx", "TrainProf", "Iters")
+          "CutGain", "TenIdx", "TenProf", "Anchor", "Markup", "TenMarkup", "TrainIdx", "TrainProf", "Iters",
+          "PlaceboUnit")
 
 
 def tci(a):
@@ -128,6 +129,11 @@ def main():
                 r["index_k10"] = tci(d10["per_session"]["index"])
                 r["profit_k10"] = tci(d10["per_session"]["profit_over_nash"])
                 r["anchoring"] = bool(abs(idx[0] - r["index_k10"][0]) > np.hypot(idx[1], r["index_k10"][1]))
+            fp = f1.replace("_duopoly_k1.json", "_forced2_k1.json")  # state-matched placebo (twice cost)
+            dp = json.load(open(fp)).get("deviation_cut") if os.path.exists(fp) and os.path.getsize(fp) > 0 else None
+            if dp and dp["deviation_size"] >= MIN_CUT:
+                r["placebo"] = (dp["rival_aggression"][1] / dp["deviation_size"],
+                                abs(dp["rival_aggression_ci95"][1] / dp["deviation_size"]))
         out[run] = r
         m = {f: "--" for f in FIELDS}
         if "train" in r:
@@ -149,6 +155,9 @@ def main():
                      TenMarkup=f"{r['markup_k10']:.2f}", TenProf=f"{r['profit_k10'][0]:.2f}")
         if "markup" in r:
             m["Markup"] = f"{r['markup']:.2f}"
+        if "placebo" in r:
+            u = r["placebo"]
+            m["PlaceboUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
         for f, v in m.items():
             macros[f"GrpoPr{key}{f}"] = v[1:] if v.startswith("-0.00") else v  # no "-0.00"
     # training against the scripted tit-for-tat rival (positive control), and the trained policies paired
