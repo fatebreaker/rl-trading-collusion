@@ -118,7 +118,9 @@ def main():
                      ("pricing_tft_1p7b_g09", "TftMidFwd"), ("pricing_tft_1p7b_g0", "TftMidMyo"),
                      ("pricing_tft_0p6b_g09_s1", "TftFwdSeed"),
                      ("pricing_cheat_0p6b_g09", "CheatFwd"), ("pricing_cheat_0p6b_g0", "CheatMyo"),
-                     ("pricing_cheatnash_0p6b_g09", "CheatNashFwd"), ("pricing_cheatnash_0p6b_g0", "CheatNashMyo")):
+                     ("pricing_cheatnash_0p6b_g09", "CheatNashFwd"), ("pricing_cheatnash_0p6b_g0", "CheatNashMyo"),
+                     ("pricing_cheat_0p6b_g09_s1", "CheatFwdSeed"), ("pricing_cheat_0p6b_g09_s2", "CheatFwdSeedTwo"),
+                     ("pricing_cheatnash_ent05_0p6b_g09", "CheatNashEnt"), ("pricing_cheat_1p7b_g09", "CheatMidFwd")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench")}

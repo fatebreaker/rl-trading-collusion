@@ -25,6 +25,14 @@ DIRS = ["llm_pilot", "llm_api", "llm_models", "grpo_audit", "llm_talk"]
 CONTROLS = ("punisher",)  # instructed trigger strategies
 
 
+def run_delta(path):
+    """Mean collusion index of a run (frozen-lambda benchmarks)."""
+    d = json.load(open(os.path.join(ROOT, "results", path)))
+    fb = d["bench_fixed"]
+    b = np.asarray(d["per_session"]["agg_intensity"], float)
+    return float(((b - fb["agg_nash"]) / (fb["agg_coll"] - fb["agg_nash"])).mean())
+
+
 def tests():
     out = []
     for d in DIRS:
@@ -137,6 +145,11 @@ def write_table(null, groups, ctrl_eff, res, effect, re_all, cum, floor):
     L.append("\\midrule")
     L.append("All & " + cells(null, re_all) + " \\\\")
     L.append("Each run once & " + cells(indep, (res["indep_pooled"], res["indep_pooled_ci"])) + " \\\\")
+    if "aggr_n" in res:
+        files = {t["file"] for t in null}
+        dl = {f: run_delta(f) for f in files}
+        aggr = [t for t in null if t["test"] == "deviation_shift" or dl[t["file"]] > 0]
+        L.append("Aggressive deviations only & " + cells(aggr, (res["aggr_pooled"], res["aggr_pooled_ci"])) + " \\\\")
     L.append("Agents earning at least Nash profit & "
              + cells(above, (res["above_pooled"], res["above_pooled_ci"])) + " \\\\")
     m_cum, c_cum, cum_sig, ctrl_cum = cum
@@ -180,6 +193,19 @@ def main():
            "pooled": pooled, "pooled_ci": 1.96 * pooled_se,
            "pooled_noisy_only": pooled2, "pooled_noisy_only_ci": 1.96 * pooled2_se,
            "n_noisy_only": len(nz)}
+    # aggressive deviations only: every shift (toward the value), and best responses from runs that
+    # trade less than Nash (Delta > 0); from over-trading runs a best response trades less, a move
+    # that no enforcer would punish
+    deltas = {f: run_delta(f) for f in {t["file"] for t in null}}
+    aggr = [t for t in null if t["test"] == "deviation_shift" or deltas[t["file"]] > 0]
+    var_a = [t for t in aggr if t["ci"] / 1.96 > 0.001]
+    m_a, c_a = random_effects(var_a, floor)
+    mon_a = [t for t in aggr if structure(t) == "monitor" and t["ci"] / 1.96 > 0.001]
+    res.update(aggr_n=len(aggr), aggr_sig=sum(t["mean"] - t["ci"] > 0 for t in aggr), aggr_pooled=m_a,
+               aggr_pooled_ci=c_a, aggr_mde=float(np.median([2.8 * t["ci"] / 1.96 for t in var_a])),
+               aggr_mon_n=sum(structure(t) == "monitor" for t in aggr),
+               aggr_mon_mde=float(np.median([2.8 * t["ci"] / 1.96 for t in mon_a])) if mon_a else float("nan"),
+               restraint_n=len(null) - len(aggr))
     # by information structure, against the instructed control in the same structure
     ctrl_eff = {}
     for t in ctrl:
@@ -266,6 +292,11 @@ def main():
                    "NullAboveN": len(above), "NullAboveRuns": res["above_runs"], "NullAboveSig": res["above_sig"],
                    "NullAbovePooled": f"{abs(m_ab) if abs(m_ab) < 5e-4 else m_ab:.3f}",
                    "NullAbovePooledCI": f"{c_ab:.3f}", "NullAboveBelowCtrl": res["above_below_ctrl"]})
+    macros.update({"NullAggN": res["aggr_n"], "NullAggSig": res["aggr_sig"],
+                   "NullAggPooled": f"{abs(res['aggr_pooled']) if abs(res['aggr_pooled']) < 5e-4 else res['aggr_pooled']:.3f}",
+                   "NullAggPooledCI": f"{res['aggr_pooled_ci']:.3f}", "NullAggMDE": f"{res['aggr_mde']:.2f}",
+                   "NullAggMonN": res["aggr_mon_n"], "NullAggMonMDE": f"{res['aggr_mon_mde']:.2f}",
+                   "NullRestraintN": res["restraint_n"]})
     macros.update({"NullCtrlFlow": f"{ctrl_eff.get('flow_br', float('nan')):.2f}",
                    "NullCtrlShift": f"{ctrl_eff.get('monitor_shift', float('nan')):.2f}"})
     write_table(null, groups, ctrl_eff, res, effect, (m_all, c_all), (m_cum, c_cum, cum_sig, ctrl_cum), floor)
