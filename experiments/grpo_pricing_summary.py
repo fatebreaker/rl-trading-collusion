@@ -267,6 +267,22 @@ def main():
         out["base_placebo"] = {"per_unit": u, "gain": (t["cum_gain_dev"], t["cum_gain_dev_ci95"])}
     else:
         macros["GrpoBasePlaceboUnit"] = macros["GrpoBasePlaceboBench"] = "--"
+    # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
+    # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
+    for tag, key in (("cheat_vs_tft", "TftResp"), ("tft_vs_cheat", "CheatResp")):
+        fc = os.path.join(ROOT, "results", "grpo_pricing_audit", f"cross_{tag}_duopoly_k1.json")
+        dcx = json.load(open(fc)) if os.path.exists(fc) and os.path.getsize(fc) > 0 else {}
+        t = dcx.get("deviation_cut")
+        if t and t["deviation_size"] >= MIN_CUT:
+            u = (t["rival_aggression"][1] / t["deviation_size"], abs(t["rival_aggression_ci95"][1] / t["deviation_size"]))
+            macros[f"GrpoCross{key}Unit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+            macros[f"GrpoCross{key}Gain"] = f"{t['cum_gain_dev']:+.2f}\\pm{t['cum_gain_dev_ci95']:.2f}"
+            macros[f"GrpoCross{key}Idx"] = f"{dcx['summary']['index']:.2f}"
+            out[f"cross_{tag}"] = {"per_unit": u, "gain": (t["cum_gain_dev"], t["cum_gain_dev_ci95"]),
+                                   "index": dcx["summary"]["index"]}
+        else:
+            for f_ in ("Unit", "Gain", "Idx"):
+                macros[f"GrpoCross{key}{f_}"] = "--"
     rivals_table(out)
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
