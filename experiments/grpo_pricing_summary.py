@@ -178,9 +178,14 @@ def main():
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo")
                                              for f in ("Unit", "Gain", "Bench"))}
         log = os.path.join(ROOT, "results", "grpo", run, "log.jsonl")
+        f1 = latest_audit(run)
         if os.path.exists(log):
             L = [json.loads(x) for x in open(log) if x.strip()]
             tail = L[-10:]
+            if f1:  # training statistics over the ten iterations up to the audited checkpoint
+                it = int(os.path.basename(f1).split("_adapter_")[1][:4])
+                if it < L[-1]["iteration"]:
+                    tail = [x for x in L if it - 9 <= x["iteration"] <= it]
             r["train"] = {"iterations": len(L),
                           "final_index": float(np.mean([x["policy_price_index_second_half"] for x in tail])),
                           "final_profit_over_nash": float(np.mean([x["policy_profit_over_nash"] for x in tail])),
@@ -195,7 +200,6 @@ def main():
                                   war_curve=[[x["iteration"], x["war_share"]] for x in L])
                 m.update(War=f"{100 * r['train']['war_share']:.0f}", WarFirst=f"{100 * r['train']['war_share_first']:.0f}",
                          AnsIdx=f"{r['train']['answer_index']:.2f}", Cheats=f"{r['train']['cheats']:.1f}")
-        f1 = latest_audit(run)
         if f1:
             d = json.load(open(f1))
             r["pair"] = {"index": tci(d["per_session"]["index"]), "profit_over_nash": tci(d["per_session"]["profit_over_nash"]),
