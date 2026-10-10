@@ -1,7 +1,8 @@
 """Payoffs of simple pricing policies against the scripted rival that cheats unless a price war
 deters it (kylecollusion.grpo.CheaterRival), in the training design: 16-period episodes, returns
 discounted at gamma = 0.9. Shows that answering each cheat with a war pays, but only through
-deterrence (a myopic agent loses by it), in both designs we train against.
+deterrence (a myopic agent loses by it), in both designs we train against, and that matching a cheat
+pays at once, about as much as a best response.
 
     python experiments/cheater_payoffs.py
 """
@@ -52,6 +53,7 @@ def main():
     for name, design in designs.items():
         pol = {"war after a cheat": war[name],
                "best response after a cheat": lambda rv: np.where(rv.cheat_prev, br(rv.r_prev), PM),
+               "match after a cheat": lambda rv: np.where(rv.cheat_prev, rv.r_prev, PM),
                "never answer": lambda rv: np.full(rv.u.shape[0], PM),
                "always undercut": lambda rv: np.full(rv.u.shape[0], br(PM)),
                "Nash": lambda rv: np.full(rv.u.shape[0], PN)}
@@ -59,7 +61,8 @@ def main():
         best = max(v[0] for k, v in res.items() if k != "war after a cheat")
         print(f"war {name} (margin {design['margin'] * span:.3f}, cuts {design['cut']}):")
         for k, (ret, wars, cheats) in res.items():
-            print(f"  {k:30s} return {ret:.3f}  wars {wars:.1f}  cheats {cheats:.1f} per episode")
+            print(f"  {k:30s} return {ret:.3f} ({100 * (ret / res['never answer'][0] - 1):+.1f}% vs never "
+                  f"answering)  wars {wars:.1f}  cheats {cheats:.1f} per episode")
         print(f"  war vs best alternative: {100 * (res['war after a cheat'][0] / best - 1):+.1f}%")
         r = (1 - np.mean(design["cut"])) * PM  # a typical cheat; the rival is back at p^M next period
         stage = lambda p: 0.5 * profit(p, PM) + 0.5 * profit(p, r)  # noqa: E731

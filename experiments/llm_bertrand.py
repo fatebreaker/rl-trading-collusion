@@ -65,6 +65,10 @@ def main(argv=None):
     ap.add_argument("--attention-backend", default=None)
     ap.add_argument("--tp", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--force-price", type=float, default=None,
+                    help="state-matched placebo: both firms post this multiple of cost (no model calls) "
+                         "for the first --force-periods periods, so the deviation tests start from that state")
+    ap.add_argument("--force-periods", type=int, default=0)
     ap.add_argument("--save-raw", action="store_true")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
@@ -106,6 +110,12 @@ def main(argv=None):
     t0 = time.time()
     stopped = None
     for t in range(T):
+        if a.force_price is not None and t < a.force_periods:  # imposed history, no model calls
+            p = np.full((S, 2), a.force_price * env.bench["cost"])
+            q, pi = env.step(p)
+            pricers.record(p, q, pi)
+            prices[t], profit[t] = p, pi
+            continue
         try:
             p, q, pi = run_period(env, pricers, backend, policy=policy)
         except BudgetExceeded as e:  # keep the completed periods

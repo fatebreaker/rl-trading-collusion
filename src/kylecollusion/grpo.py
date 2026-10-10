@@ -87,6 +87,7 @@ class GRPOConfig:
     cheat_cut_max: float = 0.25
     deter_len: int = 10
     war_margin: float = 0.22  # a deterring price war lies this share of (p^M - p^N) below Nash and the cheat
+    init_adapter: str = ""  # start from another run's adapter (e.g. continue a trained policy in self-play)
 
 
 class CheaterRival:
@@ -432,6 +433,13 @@ def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
                 for d in done:
                     if d["iteration"] <= last:
                         fh.write(json.dumps(d) + "\n")
+
+    if start == 0 and cfg.init_adapter:
+        from peft import set_peft_model_state_dict
+        from safetensors.torch import load_file
+
+        set_peft_model_state_dict(model, load_file(os.path.join(cfg.init_adapter, "adapter_model.safetensors")))
+        backend.lora = LoRARequest("init", 1, cfg.init_adapter)
 
     tmp = os.path.join(out_dir, "adapter_latest")
     for it in range(start, cfg.iterations):

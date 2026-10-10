@@ -123,7 +123,7 @@ def main():
                      ("pricing_cheatnash_ent05_0p6b_g09", "CheatNashEnt"), ("pricing_cheat_1p7b_g09", "CheatMidFwd")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
-                                     "PairBRUnit", "PairCutBench")}
+                                     "PairBRUnit", "PairCutBench", "PairRiseUnit", "PairRiseGain")}
         log = os.path.join(ROOT, "results", "grpo", run, "log.jsonl")
         if os.path.exists(log):
             L = [json.loads(x) for x in open(log) if x.strip()]
@@ -170,6 +170,16 @@ def main():
                 d10 = json.load(open(f10))
                 r["pair"]["index_k10"] = tci(d10["per_session"]["index"])
                 m["PairTenIdx"] = f"{r['pair']['index_k10'][0]:.2f}"
+            # a visible 10% price rise (separate run): an agent that copies prices follows it, one that
+            # punishes cuts need not
+            fh_ = f1.replace("_duopoly_k1.json", "_duopoly_k1_hike.json")
+            dh = json.load(open(fh_)).get("deviation_hike") if os.path.exists(fh_) and os.path.getsize(fh_) > 0 else None
+            if dh and abs(dh["deviation_size"]) >= MIN_CUT:
+                u = (dh["rival_aggression"][1] / dh["deviation_size"], abs(dh["rival_aggression_ci95"][1] / dh["deviation_size"]))
+                r["pair"]["rise_per_unit"] = u
+                r["pair"]["rise_gain"] = (dh["cum_gain_dev"], dh["cum_gain_dev_ci95"])
+                m["PairRiseUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+                m["PairRiseGain"] = f"{dh['cum_gain_dev']:+.2f}\\pm{dh['cum_gain_dev_ci95']:.2f}"
         out[run] = r
         for f, v in m.items():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
