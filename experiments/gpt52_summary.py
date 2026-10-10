@@ -274,9 +274,13 @@ def main():
     # worst case of identical events within a session (standard error times sqrt(events/session))
     mdes = {}
     pr = json.load(open(os.path.join(ROOT, "results", "pricing_summary.json")))
-    for k in ("mistral7b_duopoly_k1", "qwen3_8b_duopoly_k1", "qwen3_8b_think_duopoly_k1"):
+    for k in ("mistral7b_duopoly_k1", "qwen3_8b_duopoly_k1", "qwen3_8b_think_duopoly_k1", "qwen3_4b_duopoly_k1",
+              "phi4_duopoly_k1", "olmo2_13b_duopoly_k1", "qwen3_32b_duopoly_k1"):
+        if k not in pr:
+            continue
         m = json.load(open(os.path.join(ROOT, "results", "llm_bertrand", f"{k}.json")))["args"]["dev_events"]
-        mdes[k] = 2.8 * pr[k]["pass_through_ci95"] / 1.96 * np.sqrt(m)
+        c = pr[k].get("pass_through_ci95") or pr[k].get("cut_pass_through_ci95")  # the cut where a best response
+        mdes[k] = 2.8 * c / 1.96 * np.sqrt(m)                                    # barely moves the price
     fsum = json.load(open(os.path.join(ROOT, "results", "fish_summary.json")))
     for k in ("gptoss20b_duopoly_P1", "gptoss120b_duopoly_P1"):
         m = json.load(open(os.path.join(RES, f"{k}.json")))["args"]["dev_events"]

@@ -187,9 +187,9 @@ def main():
                 if it < L[-1]["iteration"]:
                     tail = [x for x in L if it - 9 <= x["iteration"] <= it]
             r["train"] = {"iterations": len(L),
-                          "final_index": float(np.mean([x["policy_price_index_second_half"] for x in tail])),
-                          "final_profit_over_nash": float(np.mean([x["policy_profit_over_nash"] for x in tail])),
-                          "curve": [[x["iteration"], x["policy_price_index_second_half"]] for x in L]}
+                          "final_index": float(np.mean([x.get("policy_price_index_second_half", x.get("price_index_second_half")) for x in tail])),
+                          "final_profit_over_nash": float(np.mean([x.get("policy_profit_over_nash", x.get("profit_over_nash")) for x in tail])),
+                          "curve": [[x["iteration"], x.get("policy_price_index_second_half", x.get("price_index_second_half"))] for x in L]}
             m.update(Idx=f"{r['train']['final_index']:.2f}", Prof=f"{r['train']['final_profit_over_nash']:.2f}",
                      Iters=str(len(L)))
             if "war_share" in L[0]:  # cheater rival: how the policy answers cheats (last ten iterations)
