@@ -349,14 +349,18 @@ class LLMPricers:
 
 
 def act_many(pairs, backend) -> list[np.ndarray]:
-    convs, seeds, sizes = [], [], []
+    convs, seeds, sizes, firms = [], [], [], []
     for env, pr in pairs:
         c, s = pr.requests(env)
         convs += c
         seeds += s
         sizes.append(len(c))
+        firms += [i for _ in range(pr.S) for i in pr.active]
     cfg = pairs[0][1].cfg
-    texts = backend.generate(convs, seeds, cfg.temperature, cfg.max_tokens)
+    if getattr(backend, "_lora2", None) is not None:  # cross-play: tell the backend which firm asks
+        texts = backend.generate(convs, seeds, cfg.temperature, cfg.max_tokens, firms=firms)
+    else:
+        texts = backend.generate(convs, seeds, cfg.temperature, cfg.max_tokens)
     out, k = [], 0
     for (_, pr), n in zip(pairs, sizes):
         out.append(pr.apply(texts[k:k + n]))

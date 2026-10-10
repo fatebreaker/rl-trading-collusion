@@ -531,12 +531,14 @@ class VLLMBackend:
     dtype: str = "auto"  # "half" on pre-Ampere GPUs (no bf16)
     attention_backend: str | None = None  # "triton_attn" on pre-Ampere GPUs
     lora_path: str | None = None  # a trained adapter (see grpo.py)
+    lora_path2: str | None = None  # cross-play: a second adapter, for firm 1 when `generate` gets `firms`
     lora_rank: int = 16
     disable_custom_all_reduce: bool = False  # for tensor-parallel runs that fail in it
     reasoning_effort: str | None = None  # gpt-oss chat template: "low", "medium" (default), "high"
     max_num_seqs: int | None = None  # fewer concurrent sequences: smaller CUDA graphs, more KV cache
     _llm: object = field(default=None, repr=False)
     _lora: object = field(default=None, repr=False)
+    _lora2: object = field(default=None, repr=False)
 
     def __post_init__(self):
         from vllm import LLM
@@ -547,20 +549,25 @@ class VLLMBackend:
         if self.lora_path:
             from vllm.lora.request import LoRARequest
 
-            kw.update(enable_lora=True, max_lora_rank=self.lora_rank, max_loras=1)
+            kw.update(enable_lora=True, max_lora_rank=self.lora_rank, max_loras=2 if self.lora_path2 else 1)
             self._lora = LoRARequest("trained", 1, self.lora_path)
+            if self.lora_path2:
+                self._lora2 = LoRARequest("second", 2, self.lora_path2)
         self._llm = LLM(model=self.model, gpu_memory_utilization=self.gpu_memory_utilization,
                         max_model_len=self.max_model_len,
                         tensor_parallel_size=self.tensor_parallel_size,
                         disable_custom_all_reduce=self.disable_custom_all_reduce,
                         enable_prefix_caching=True, dtype=self.dtype, **kw)
 
-    def generate(self, convs, seeds, temperature, max_tokens):
+    def generate(self, convs, seeds, temperature, max_tokens, firms=None):
         from vllm import SamplingParams
 
         params = [SamplingParams(temperature=temperature, max_tokens=max_tokens, seed=s)
                   for s in seeds]
-        outs = self._llm.chat(convs, params, use_tqdm=False, lora_request=self._lora,
+        lora = self._lora
+        if self._lora2 is not None and firms is not None:  # cross-play: firm 1 answers with the second adapter
+            lora = [self._lora2 if f == 1 else self._lora for f in firms]
+        outs = self._llm.chat(convs, params, use_tqdm=False, lora_request=lora,
                               chat_template_kwargs={"enable_thinking": self.enable_thinking,
                                                     **({"reasoning_effort": self.reasoning_effort}
                                                        if self.reasoning_effort else {})})
