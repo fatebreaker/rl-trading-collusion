@@ -18,7 +18,10 @@ from scipy import stats
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RES = os.path.join(HERE, "..", "results", "llm_bertrand")
-MODELS = {"qwen3_8b": "Qwen", "qwen3_8b_think": "QwenThink", "mistral7b": "Mistral"}
+MODELS = {"qwen3_8b": "Qwen", "qwen3_8b_think": "QwenThink", "mistral7b": "Mistral", "qwen3_4b": "QwenFour",
+          "phi4": "Phi", "olmo2_13b": "Olmo", "qwen3_32b": "QwenBig"}
+NAMES = {"qwen3_8b": "Qwen3-8B", "qwen3_8b_think": "Qwen3-8B, thinking", "mistral7b": "Mistral-7B",
+         "qwen3_4b": "Qwen3-4B", "phi4": "Phi-4", "olmo2_13b": "OLMo-2-13B", "qwen3_32b": "Qwen3-32B"}
 MIN_CUT = 0.1  # smallest mean deviation (in units of p_mono - p_Nash) for a per-unit response
 CONDS = {"duopoly_k1": "DuoOne", "duopoly_k10": "DuoTen", "myopic_k1": "Myopic", "trigger_k1": "Trigger",
          "duopoly_k1_s1": "DuoOneSeedOne", "myopic_k1_s1": "MyopicSeedOne"}
@@ -70,7 +73,7 @@ def write_table(table):
          "\\cmidrule(lr){5-6}\\cmidrule(lr){7-8}",
          "Model & Condition & index & / Nash & rival & gain & rival & gain & coefficient & (\\%) \\\\", "\\midrule"]
     first = True
-    for tag, mname in (("qwen3_8b", "Qwen3-8B"), ("qwen3_8b_think", "Qwen3-8B, thinking"), ("mistral7b", "Mistral-7B")):
+    for tag, mname in NAMES.items():
         rows = [(c, table.get(f"{tag}_{c}")) for c in names if table.get(f"{tag}_{c}")]
         if not rows:
             continue

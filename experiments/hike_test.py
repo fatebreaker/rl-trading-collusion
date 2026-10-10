@@ -24,6 +24,7 @@ from kylecollusion.bertrand import BertrandConfig, BertrandMarket, BertrandQ, de
 
 SESSIONS, STEPS, SEED = 100, 2_500_000, 0  # as bertrand_validation.py
 HIKE = 0.10
+LLM_RISE = {"qwen3_4b": "Qwen3-4B", "phi4": "Phi-4", "olmo2_13b": "OLMo-2-13B", "qwen3_32b": "Qwen3-32B"}
 
 
 def per_unit(d):
@@ -74,6 +75,19 @@ def llm(out):
         if row:
             out["llm_" + f[:-5]] = row
             print(f, json.dumps(row), flush=True)
+    for tag in LLM_RISE:  # in-context pricing runs that carry their own rise test (--dev-hike 0.1)
+        f = os.path.join(ROOT, "results", "llm_bertrand", f"{tag}_duopoly_k1.json")
+        r = json.load(open(f)) if os.path.exists(f) and os.path.getsize(f) > 0 else {}
+        row = {}
+        for key in ("deviation_cut", "deviation_hike"):
+            t = r.get(key)
+            if t and abs(t["deviation_size"]) > 1e-9:
+                u = t["rival_aggression"][1] / t["deviation_size"]
+                uc = abs(t["rival_aggression_ci95"][1] / t["deviation_size"])
+                row[key] = {"per_unit": u, "per_unit_ci95": uc, "gain": t["cum_gain_dev"],
+                            "gain_ci95": t["cum_gain_dev_ci95"], "size": t["deviation_size"]}
+        if len(row) == 2:
+            out[f"llm_{tag}_duopoly_k1"] = row
 
 
 def write_table(out):
@@ -91,11 +105,12 @@ def write_table(out):
                      f"{pm(b['cum_gain_dev'] / pi_n, b['cum_gain_dev_ci95'] / pi_n, '+')} & "
                      f"{pm(h['per_unit'], h['per_unit_ci95'])} & "
                      f"{pm(h['cum_gain_dev'] / pi_n, h['cum_gain_dev_ci95'] / pi_n, '+')} \\\\")
-    r = out.get("llm_mistral7b_duopoly_k1")
-    if r and "deviation_cut" in r and "deviation_hike" in r:
-        c, h = r["deviation_cut"], r["deviation_hike"]
-        L.append(f"Mistral-7B & {pm(c['per_unit'], c['per_unit_ci95'])} & {pm(c['gain'], c['gain_ci95'], '+')} & "
-                 f"{pm(h['per_unit'], h['per_unit_ci95'])} & {pm(h['gain'], h['gain_ci95'], '+')} \\\\")
+    for tag, name in {"mistral7b": "Mistral-7B", **LLM_RISE}.items():
+        r = out.get(f"llm_{tag}_duopoly_k1")
+        if r and "deviation_cut" in r and "deviation_hike" in r:
+            c, h = r["deviation_cut"], r["deviation_hike"]
+            L.append(f"{name} & {pm(c['per_unit'], c['per_unit_ci95'])} & {pm(c['gain'], c['gain_ci95'], '+')} & "
+                     f"{pm(h['per_unit'], h['per_unit_ci95'])} & {pm(h['gain'], h['gain_ci95'], '+')} \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     open(os.path.join(ROOT, "paper", "table_hike.tex"), "w").write("\n".join(L) + "\n")
