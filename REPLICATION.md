@@ -1,4 +1,4 @@
-# Replication package: "Is Anyone Enforcing the Cartel? Auditing Collusion Claims About LLM Agents"
+# Replication package: "Is Anyone Enforcing the Cartel? What Reinforcement Learning Teaches LLM Agents in Markets"
 
 Structure follows the Social Science Data Editors template (README v1.1).
 

@@ -288,6 +288,27 @@ def main():
         else:
             for f_ in ("Unit", "Gain", "Idx"):
                 macros[f"GrpoCross{key}{f_}"] = "--"
+    # the untrained base model, audited as the adapters (Figure 1's starting point)
+    fb1 = os.path.join(ROOT, "results", "grpo_pricing_audit", "base_qwen3p0p6b_duopoly_k1.json")
+    db1 = json.load(open(fb1)) if os.path.exists(fb1) and os.path.getsize(fb1) > 0 else {}
+    if db1.get("deviation_cut"):
+        t = db1["deviation_cut"]
+        po = tci(db1["per_session"]["profit_over_nash"])
+        out["base_k1"] = {"index": tci(db1["per_session"]["index"]), "profit_over_nash": po,
+                          "profit_index": ((po[0] - 1) / (pi_ratio - 1), po[1] / (pi_ratio - 1)),
+                          "cut_per_unit": (t["rival_aggression"][1] / t["deviation_size"],
+                                           abs(t["rival_aggression_ci95"][1] / t["deviation_size"])),
+                          "cut_by_lag": [x / t["deviation_size"] for x in t["rival_aggression"]],
+                          "bench": benchmarks(np.asarray(db1["prices_sessions"], float), 1.0)}
+        macros["GrpoBaseIdx"] = f"{out['base_k1']['index'][0]:.1f}"
+        macros["GrpoBaseProf"] = f"{po[0]:.2f}"
+        u = out["base_k1"]["cut_per_unit"]
+        macros["GrpoBaseCutUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+        fb10 = fb1.replace("_k1.json", "_k10.json")
+        if os.path.exists(fb10):
+            macros["GrpoBaseTenIdx"] = f"{json.load(open(fb10))['summary']['index']:.1f}"
+    for k in ("GrpoBaseIdx", "GrpoBaseProf", "GrpoBaseCutUnit", "GrpoBaseTenIdx"):
+        macros.setdefault(k, "--")
     rivals_table(out)
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
