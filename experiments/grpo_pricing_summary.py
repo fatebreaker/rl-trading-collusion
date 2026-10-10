@@ -37,8 +37,9 @@ def tci(a):
 
 
 def latest_audit(run):
+    """The latest audited adapter whose answers parse (an adapter whose outputs degenerated is not audited)."""
     fs = sorted(glob.glob(os.path.join(ROOT, "results", "grpo_pricing_audit", f"{run}_adapter_*_duopoly_k1.json")))
-    fs = [f for f in fs if os.path.getsize(f) > 0]
+    fs = [f for f in fs if os.path.getsize(f) > 0 and json.load(open(f)).get("parse_fail_rate", 0) < 0.5]
     return fs[-1] if fs else None
 
 
