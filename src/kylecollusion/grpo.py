@@ -89,6 +89,7 @@ class GRPOConfig:
     deter_len: int = 10
     war_margin: float = 0.22  # a deterring price war lies this share of (p^M - p^N) below Nash and the cheat
     explore_war: float = 0.0  # pricing vs the cheater: share of answers to a cheat replaced by a war (exploration check)
+    format_penalty: bool = False  # pricing: an answer that does not parse earns nothing that period (training reward only)
     init_adapter: str = ""  # start from another run's adapter (e.g. continue a trained policy in self-play)
 
 
@@ -295,6 +296,7 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     T = cfg.periods
     profit = np.zeros((T, S, 2))
     prices = np.zeros((T, S, 2))
+    failed = np.zeros((T, S, 2), bool)
     prev = np.full(S, env.bench["p_mono"])  # the tit-for-tat rival opens at the monopoly price
     if cheater:
         rival = CheaterRival(env.bench, S, cfg.group_size, T, np.random.default_rng(seed + 104729),
@@ -305,6 +307,7 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     own_ans, n_inj = [], 0
     for t in range(T):
         p = act_many([(env, pricers)], backend)[0]
+        failed[t] = pricers.failed
         if tft:
             p[:, 1] = prev
             prev = np.clip(p[:, 0], 0.0, 10.0 * env.bcfg.cost)
@@ -317,6 +320,7 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
                 for s in np.flatnonzero(inj):
                     p[s, 0] = math.floor(thr[s] * 100) / 100
                     _force_answer(backend, s, p[s, 0])
+                    failed[t, s, 0] = False
                 n_inj += int(inj.sum())
             p[:, 1] = rival.price(t)
         q, pi = env.step(p)
@@ -327,7 +331,10 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     records = backend.records
     backend.records = None
     act = pricers.active
-    adv = group_advantages(profit[:, :, act], cfg.gamma, cfg.group_size)  # policy firms only
+    reward = profit[:, :, act]
+    if cfg.format_penalty:  # the market keeps the last price; the answer itself earns nothing
+        reward = np.where(failed[:, :, act], 0.0, reward)
+    adv = group_advantages(reward, cfg.gamma, cfg.group_size)  # policy firms only
     samples = []
     for t in range(T):
         for k, (p_ids, o_ids) in enumerate(records[t]):

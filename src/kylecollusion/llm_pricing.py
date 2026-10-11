@@ -267,6 +267,7 @@ class LLMPricers:
         self.last = np.full((env.S, 2), np.nan)
         self.total = np.zeros((env.S, 2))
         self.t, self.n_calls, self.n_fail = 0, 0, 0
+        self.failed = np.zeros((env.S, 2), bool)  # which of the last period's answers did not parse
         self.raw: list | None = None
         self.fallback = 1.5 * env.bench["cost"]  # price used before any history if unreadable
 
@@ -317,6 +318,7 @@ class LLMPricers:
 
     def apply(self, texts: list[str]) -> np.ndarray:
         p = np.full((self.S, 2), np.nan)
+        self.failed[:] = False
         for k, text in enumerate(texts):
             s, j = divmod(k, len(self.active))
             i = self.active[j]
@@ -330,6 +332,7 @@ class LLMPricers:
             self.n_calls += 1
             if price is None:
                 self.n_fail += 1
+                self.failed[s, i] = True
                 price = self.last[s, i] if np.isfinite(self.last[s, i]) else self.fallback
             elif notes is None:
                 self.files[s][i] = (plans, insights)
