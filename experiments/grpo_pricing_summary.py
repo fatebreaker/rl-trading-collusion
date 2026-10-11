@@ -27,7 +27,8 @@ MIN_CUT = 0.1  # smallest mean deviation (index units) for a response per unit
 # run directory -> (model, discount factor of the credit, macro key)
 RUNS = {"pricing_0p6b_g09": ("Qwen3-0.6B", 0.9, "SmallFwd"), "pricing_0p6b_g0": ("Qwen3-0.6B", 0.0, "SmallMyo"),
         "pricing_1p7b_g09": ("Qwen3-1.7B", 0.9, "MidFwd"), "pricing_1p7b_g0": ("Qwen3-1.7B", 0.0, "MidMyo"),
-        "pricing_llama1b_g09": ("Llama-3.2-1B", 0.9, "LlamaFwd")}
+        "pricing_llama1b_g09": ("Llama-3.2-1B", 0.9, "LlamaFwd"),
+        "pricing_0p6b_g09_grp16": ("Qwen3-0.6B", 0.9, "SmallFwdGrp")}  # groups of 16 sessions
 FIELDS = ("Idx", "IdxCI", "Prof", "ProfIdx", "BRSize", "BRUnit", "BRBench", "Gain", "CutUnit", "CutBench",
           "CutGain", "TenIdx", "TenProf", "Anchor", "Markup", "TenMarkup", "TrainIdx", "TrainProf", "Iters",
           "PlaceboUnit")
@@ -205,7 +206,9 @@ def main():
                                      "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo")
-                                             for f in ("Unit", "Gain", "Bench"))}
+                                             for f in ("Unit", "Gain", "Bench"))
+                                     + tuple(f"PairCut{k}Gain{d}" for k in ("Two", "Five", "Ten", "Twenty")
+                                             for d in ("Nine", "NineFive"))}
         log = os.path.join(ROOT, "results", "grpo", run, "log.jsonl")
         f1 = latest_audit(run)
         if os.path.exists(log):
@@ -287,6 +290,25 @@ def main():
                 m[f"Pair{tk}Unit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
                 m[f"Pair{tk}Gain"] = f"{t['cum_gain_dev']:+.2f}\\pm{t['cum_gain_dev_ci95']:.2f}"
                 m[f"Pair{tk}Bench"] = f"{r['pair'][tk]['bench']:.2f}"
+            # cut-size tests: a visible cut of 2-20%, with undiscounted gains by lag, so the gain can be taken
+            # at the training discount factor (0.9) as well as the audit's (0.95)
+            cs = {}
+            for C, nm in (("02", "Two"), ("05", "Five"), ("10", "Ten"), ("20", "Twenty")):
+                fx = f1.replace("_duopoly_k1.json", f"_duopoly_k1_cutsz{C}.json")
+                dx = json.load(open(fx)) if os.path.exists(fx) and os.path.getsize(fx) > 0 else {}
+                t = dx.get("deviation_cut")
+                if not t or "gain_by_lag" not in t.get("per_event", {}):
+                    continue
+                g = np.asarray(t["per_event"]["gain_by_lag"], float)  # [event][lag][session]
+                e = {"size": t["deviation_size"], "per_unit": t["rival_aggression"][1] / t["deviation_size"],
+                     "by_lag": [x / t["deviation_size"] for x in t["rival_aggression"]]}
+                for gam, dn in ((0.9, "Nine"), (0.95, "NineFive")):
+                    tot = (g * gam ** np.arange(g.shape[1])[None, :, None]).sum(1).ravel()
+                    e[f"gain_{gam}"] = (float(tot.mean()), float(1.96 * tot.std(ddof=1) / np.sqrt(len(tot))))
+                    m[f"PairCut{nm}Gain{dn}"] = f"{tot.mean():+.2f}\\pm{e[f'gain_{gam}'][1]:.2f}"
+                cs[f"0.{C}"] = e
+            if cs:
+                r["pair"]["cut_sizes"] = cs
         out[run] = r
         for f, v in m.items():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
@@ -332,13 +354,17 @@ def main():
                        "cut_by_lag": [x / t["deviation_size"] for x in t["rival_aggression"]],
                        "bench": benchmarks(np.asarray(db1["prices_sessions"], float), 1.0),
                        "parse_fail": db1["parse_fail_rate"]}
+            if db1.get("deviation"):
+                out[ok]["br_gain"] = (db1["deviation"]["cum_gain_dev"], db1["deviation"]["cum_gain_dev_ci95"])
             macros[f"{bk}Idx"] = f"{out[ok]['index'][0]:.1f}"
             macros[f"{bk}Prof"] = f"{po[0]:.2f}"
             u = out[ok]["cut_per_unit"]
             macros[f"{bk}CutUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
             fb10 = fb1.replace("_k1.json", "_k10.json")
             if os.path.exists(fb10) and os.path.getsize(fb10) > 0:
-                macros[f"{bk}TenIdx"] = f"{json.load(open(fb10))['summary']['index']:.1f}"
+                d10 = json.load(open(fb10))
+                out[ok]["index_k10"] = tci(d10["per_session"]["index"])
+                macros[f"{bk}TenIdx"] = f"{d10['summary']['index']:.1f}"
         for k in ("Idx", "Prof", "CutUnit", "TenIdx"):
             macros.setdefault(bk + k, "--")
     rivals_table(out)
