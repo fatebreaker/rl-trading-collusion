@@ -68,6 +68,7 @@ def rivals_table(out):
             ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
             ("pricing_tft_llama1b_g09", "tit-for-tat", "Llama 1B", "0.9", "0"),
             ("pricing_cheat_llama1b_g09", "cheater", "Llama 1B", "0.9", "0"),
+            ("pricing_cheat_llama1b_g0", "cheater", "Llama 1B", "0", "0"),
             ("pricing_cheat_llama1b_fp_g09_s1", "cheater", "Llama 1B$^\\S$", "0.9", "1"),
             ("pricing_cheat_llama1b_fp_g0", "cheater", "Llama 1B$^\\S$", "0", "0"),
             ("pricing_cheatp03_0p6b_g09", "cheats less$^\\dagger$", "0.6B", "0.9", "0"),
