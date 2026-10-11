@@ -14,6 +14,7 @@ import glob
 import json
 import os
 import sys
+import time
 
 import numpy as np
 from scipy import stats
@@ -43,26 +44,33 @@ def latest_audit(run):
     return fs[-1] if fs else None
 
 
+def training(run, quiet=1800):
+    """Whether a run is still training: short of its iterations, with its log written in the last half hour."""
+    log, cfg = (os.path.join(ROOT, "results", "grpo", run, x) for x in ("log.jsonl", "config.json"))
+    if not (os.path.exists(log) and os.path.exists(cfg)):
+        return False
+    n = sum(1 for x in open(log) if x.strip())
+    return n < json.load(open(cfg))["iterations"] and time.time() - os.path.getmtime(log) < quiet
+
+
 def rivals_table(out):
     """Appendix table: the GRPO pricing agents trained against scripted rivals, one row per run."""
     rows = [("pricing_tft_0p6b_g09", "tit-for-tat", "0.6B", "0.9", "0"), ("pricing_tft_0p6b_g09_s1", "tit-for-tat", "0.6B", "0.9", "1"),
-            ("pricing_tft_0p6b_g0", "tit-for-tat", "0.6B", "0", "0"),
+            ("pricing_tft_0p6b_g09_s2", "tit-for-tat", "0.6B", "0.9", "2"), ("pricing_tft_0p6b_g0", "tit-for-tat", "0.6B", "0", "0"),
             ("pricing_cheat_0p6b_g09", "cheater", "0.6B", "0.9", "0"), ("pricing_cheat_0p6b_g09_s1", "cheater", "0.6B", "0.9", "1"),
-            ("pricing_cheat_0p6b_g09_s2", "cheater", "0.6B", "0.9", "2"), ("pricing_cheat_0p6b_g0", "cheater", "0.6B", "0", "0"),
-            ("pricing_cheat_1p7b_g09", "cheater", "1.7B", "0.9", "0"),
-            ("pricing_cheatnash_0p6b_g09", "cheaper war", "0.6B", "0.9", "0"),
-            ("pricing_cheatnash_ent05_0p6b_g09", "cheaper war$^*$", "0.6B", "0.9", "0"),
-            ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0"),
+            ("pricing_cheat_0p6b_g09_s2", "cheater", "0.6B", "0.9", "2"), ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
+            ("pricing_cheat_0p6b_g0", "cheater", "0.6B", "0", "0"),
             ("pricing_cheat2self_0p6b_g09", "cheater, then self", "0.6B", "0.9", "0"),
-            ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
-            ("pricing_tft_0p6b_g09_s2", "tit-for-tat", "0.6B", "0.9", "2"),
-            ("pricing_cheat_1p7b_g09_s1", "cheater", "1.7B", "0.9", "1"),
+            ("pricing_cheat_1p7b_g09", "cheater", "1.7B", "0.9", "0"), ("pricing_cheat_1p7b_g09_s1", "cheater", "1.7B", "0.9", "1"),
             ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
             ("pricing_cheatp03_0p6b_g09", "cheats less$^\\dagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatw09_0p6b_g09", "war $+9\\%^\\S$", "0.6B", "0.9", "0"),
             ("pricing_cheatw30_0p6b_g09", "war $+30\\%^\\S$", "0.6B", "0.9", "0"),
             ("pricing_cheatw30_0p6b_g09_s1", "war $+30\\%^\\S$", "0.6B", "0.9", "1"),
-            ("pricing_cheatw30_0p6b_g0", "war $+30\\%^\\S$", "0.6B", "0", "0")]
+            ("pricing_cheatw30_0p6b_g0", "war $+30\\%^\\S$", "0.6B", "0", "0"),
+            ("pricing_cheatnash_0p6b_g09", "cheaper war", "0.6B", "0.9", "0"),
+            ("pricing_cheatnash_ent05_0p6b_g09", "cheaper war$^*$", "0.6B", "0.9", "0"),
+            ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0")]
 
     def f(x, nd=2):
         return "--" if x is None or not np.isfinite(x) else f"${x:.{nd}f}$".replace("$-0.00$", "$0.00$")
@@ -78,7 +86,7 @@ def rivals_table(out):
     for run, rival, model, gamma, seed in rows:
         r = out.get(run, {})
         tr, pr = r.get("train", {}), r.get("pair", {})
-        if not tr and not pr:
+        if (not tr and not pr) or training(run):
             continue
         lag8 = pr.get("cut_by_lag", [None])[-1] if "cut_by_lag" in pr else None
         cells = [rival, model, f"{gamma}/{seed}", f(tr.get("final_index")), f(tr.get("answer_index")),
