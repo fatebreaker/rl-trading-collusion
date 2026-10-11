@@ -35,7 +35,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
-from .llm_traders import LLMTraderConfig, LLMTraders, fixed_lambda_benchmarks
+from .llm_traders import CHAT_DATE, LLMTraderConfig, LLMTraders, fixed_lambda_benchmarks
 from .market import KyleMarket, MarketConfig
 
 
@@ -193,7 +193,7 @@ class PolicyBackend:
         params = [SamplingParams(temperature=temperature, max_tokens=max_tokens, seed=s)
                   for s in seeds]
         outs = self.llm.chat(convs, params, use_tqdm=False, lora_request=self.lora,
-                             chat_template_kwargs={"enable_thinking": False})
+                             chat_template_kwargs={"enable_thinking": False, "date_string": CHAT_DATE})
         if self.records is not None:
             self.records.append([(list(o.prompt_token_ids), list(o.outputs[0].token_ids))
                                  for o in outs])

@@ -237,6 +237,9 @@ def _system_prompt_a(values: np.ndarray, n_informed: int, cfg: LLMTraderConfig) 
 
 _JSON = re.compile(r"\{[^{}]*\}", re.S)
 _ORDER = re.compile(r'"order"\s*:\s*"?\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)')
+# Llama 3 chat templates write the current date into the system prompt; fix it so prompts do not change
+# across days (templates without a date ignore it).
+CHAT_DATE = "26 Jul 2024"
 _THINK = re.compile(r"<think>.*?</think>", re.S)
 
 
@@ -569,6 +572,7 @@ class VLLMBackend:
             lora = [self._lora2 if f == 1 else self._lora for f in firms]
         outs = self._llm.chat(convs, params, use_tqdm=False, lora_request=lora,
                               chat_template_kwargs={"enable_thinking": self.enable_thinking,
+                                                    "date_string": CHAT_DATE,
                                                     **({"reasoning_effort": self.reasoning_effort}
                                                        if self.reasoning_effort else {})})
         return [o.outputs[0].text for o in outs]
