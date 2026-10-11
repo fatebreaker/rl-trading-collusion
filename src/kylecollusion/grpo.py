@@ -89,6 +89,8 @@ class GRPOConfig:
     deter_len: int = 10
     war_margin: float = 0.22  # a deterring price war lies this share of (p^M - p^N) below Nash and the cheat
     explore_war: float = 0.0  # pricing vs the cheater: share of answers to a cheat replaced by a war (exploration check)
+    explore_credit: bool = True  # credit the forced wars as if sampled (False: leave them out of the update)
+    explore_placebo: float = 0.0  # control: share of answers to no cheat replaced by the same war price
     format_penalty: bool = False  # pricing: an answer that does not parse earns nothing that period (training reward only)
     init_adapter: str = ""  # start from another run's adapter (e.g. continue a trained policy in self-play)
 
@@ -286,7 +288,8 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         raise ValueError(f"pricing rival must be 'self', 'tft' or 'cheater', not {cfg.rival!r}")
     tft, cheater = cfg.rival == "tft", cfg.rival == "cheater"
     scripted = tft or cheater
-    if cfg.explore_war and not cheater:
+    explore = cfg.explore_war > 0 or cfg.explore_placebo > 0
+    if explore and not cheater:
         raise ValueError("war exploration is for training against the cheating rival")
     S = cfg.groups * cfg.group_size
     pcfg = PricingConfig(scale=cfg.price_scale, history=cfg.history, notes=cfg.notes,
@@ -304,7 +307,8 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
                              deter_len=cfg.deter_len, margin=cfg.war_margin)
     backend.records = []
     xrng = np.random.default_rng(seed + 7919)  # which answers to a cheat are replaced by a war
-    own_ans, n_inj = [], 0
+    own_ans, own_other, n_inj = [], [], 0
+    forced = np.zeros((T, S), bool)  # the policy's answer was replaced by a war
     for t in range(T):
         p = act_many([(env, pricers)], backend)[0]
         failed[t] = pricers.failed
@@ -312,15 +316,20 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
             p[:, 1] = prev
             prev = np.clip(p[:, 0], 0.0, 10.0 * env.bcfg.cost)
         elif cheater:
-            if cfg.explore_war:  # exploration check: force a war in a share of the answers to a cheat
+            if explore:  # exploration check: force a war in a share of the answers to a cheat
                 thr = np.minimum(rival.pN, rival.r_prev) - rival.margin
-                inj = rival.cheat_prev & (xrng.random(S) < cfg.explore_war)
+                u = xrng.random(S)
+                inj = rival.cheat_prev & (u < cfg.explore_war)
+                inj |= ~rival.cheat_prev & (u < cfg.explore_placebo)  # control: the war price, answering no cheat
                 own = rival.cheat_prev & ~inj
                 own_ans.append(np.stack([np.clip(p[own, 0], 0.0, 10.0 * env.bcfg.cost), thr[own]], 1))
+                other = ~rival.cheat_prev & ~inj
+                own_other.append(np.stack([np.clip(p[other, 0], 0.0, 10.0 * env.bcfg.cost), thr[other]], 1))
                 for s in np.flatnonzero(inj):
                     p[s, 0] = math.floor(thr[s] * 100) / 100
                     _force_answer(backend, s, p[s, 0])
                     failed[t, s, 0] = False
+                forced[t] = inj
                 n_inj += int(inj.sum())
             p[:, 1] = rival.price(t)
         q, pi = env.step(p)
@@ -339,7 +348,7 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     for t in range(T):
         for k, (p_ids, o_ids) in enumerate(records[t]):
             s, j = divmod(k, len(act))
-            if o_ids:
+            if o_ids and (cfg.explore_credit or not forced[t, s]):  # uncredited forced wars stay out
                 samples.append((p_ids, o_ids, float(adv[t, s, j])))
     b = env.bench
     idx = (np.clip(prices, 0.0, 10.0 * env.bcfg.cost).mean(-1) - b["p_nash"]) / (b["p_mono"] - b["p_nash"])
@@ -363,12 +372,14 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
                      war_share=rival.n_wars / max(rival.n_answers, 1),
                      answer_price_index=float(((ans - b["p_nash"]) / (b["p_mono"] - b["p_nash"])).mean())
                      if ans.size else float("nan"))
-        if cfg.explore_war:  # the policy's own answers, without the forced wars
+        if explore:  # the policy's own answers, without the forced wars
             own = np.concatenate(own_ans) if own_ans else np.zeros((0, 2))
+            other = np.concatenate(own_other) if own_other else np.zeros((0, 2))
             stats.update(forced_wars_per_session=n_inj / S,
                          own_war_share=float((own[:, 0] <= own[:, 1]).mean()) if len(own) else float("nan"),
                          own_answer_price_index=float(((own[:, 0] - b["p_nash"]) / (b["p_mono"] - b["p_nash"])).mean())
-                         if len(own) else float("nan"))
+                         if len(own) else float("nan"),
+                         own_other_war_share=float((other[:, 0] <= other[:, 1]).mean()) if len(other) else float("nan"))
     return samples, stats
 
 
