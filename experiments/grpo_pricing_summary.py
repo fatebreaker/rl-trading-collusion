@@ -69,7 +69,7 @@ def rivals_table(out):
             ("pricing_tft_llama1b_g09", "tit-for-tat", "Llama 1B", "0.9", "0"),
             ("pricing_cheat_llama1b_g09", "cheater", "Llama 1B", "0.9", "0"),
             ("pricing_cheat_llama1b_fp_g09_s1", "cheater", "Llama 1B$^\\S$", "0.9", "1"),
-            ("pricing_cheat_llama1b_g0", "cheater", "Llama 1B", "0", "0"),
+            ("pricing_cheat_llama1b_fp_g0", "cheater", "Llama 1B$^\\S$", "0", "0"),
             ("pricing_cheatp03_0p6b_g09", "cheats less$^\\dagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatw09_0p6b_g09", "cheats more$^\\dagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatw30_0p6b_g09", "more, deeper$^\\dagger$", "0.6B", "0.9", "0"),
@@ -206,7 +206,7 @@ def main():
                      ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo"),
                      ("pricing_tft_llama1b_g09", "TftLlama"), ("pricing_cheat_llama1b_g09", "CheatLlama"),
                      ("pricing_cheat_llama1b_g09_s1", "CheatLlamaSeed"), ("pricing_cheat_llama1b_g0", "CheatLlamaMyo"),
-                     ("pricing_cheat_llama1b_fp_g09_s1", "CheatLlamaFpSeed"),
+                     ("pricing_cheat_llama1b_fp_g09_s1", "CheatLlamaFpSeed"), ("pricing_cheat_llama1b_fp_g0", "CheatLlamaFpMyo"),
                      ("pricing_cheatexp_0p6b_g09", "CheatExp"), ("pricing_cheatexp_0p6b_g09_s1", "CheatExpSeed"),
                      ("pricing_cheatexp_0p6b_g0", "CheatExpMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
