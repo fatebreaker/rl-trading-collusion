@@ -101,7 +101,7 @@ def rivals_table(out):
             continue
         lag8 = pr.get("cut_by_lag", [None])[-1] if "cut_by_lag" in pr else None
         cells = [rival, model, f"{gamma}/{seed}", f(tr.get("final_index")), f(tr.get("answer_index")),
-                 "--" if tr.get("war_share") is None else f"${100 * tr['war_share']:.0f}\\%$",
+                 "--" if tr.get("war_share") is None or not np.isfinite(tr["war_share"]) else f"${100 * tr['war_share']:.0f}\\%$",
                  f(pr["index"][0]) if "index" in pr else "--", f(pr["index_k10"][0]) if "index_k10" in pr else "--",
                  pm(pr.get("cut_per_unit")), f(lag8), pm(pr.get("cut_gain")),
                  pm(pr["Rise"]["per_unit"]) if "Rise" in pr else "--",
