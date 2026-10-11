@@ -99,7 +99,7 @@ def rivals_table(out):
     L = ["\\begin{tabular}{@{}lllcccccccccc@{}}", "\\toprule",
          " & & & \\multicolumn{3}{c}{training} & \\multicolumn{7}{c}{paired with itself} \\\\",
          "\\cmidrule(lr){4-6}\\cmidrule(l){7-13}",
-         "rival & model & $\\gamma$/seed & index & answer & war & index & $\\times10$ & cut & lag 8 & cut gain & rise & placebo \\\\",
+         "rival & model & $\\gamma$/seed & index & answer & war & index & $\\times10$ & cut & lag 8 & cut gain & rise & at $2c$ \\\\",
          "\\midrule"]
     for run, rival, model, gamma, seed in rows:
         r = out.get(run, {})
