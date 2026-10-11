@@ -137,8 +137,9 @@ def main():
                 fh.write(f"\\newcommand{{\\FishReg{nm}{m}}}{{{'--' if v is None else v}}}\n")
         # benchmarks of our pricing runs: what a rival that only best-responds follows of the
         # best-response deviation (duopolies), and the local slope across all of these runs
-        duo = [out[k]["brdev_slope"] for k in ("mistral7b_duopoly_k1", "qwen3_8b_duopoly_k1",
-                                               "qwen3_8b_think_duopoly_k1") if k in out]
+        duo = [out[k]["brdev_slope"] for k in ("mistral7b_duopoly_k1", "qwen3_8b_duopoly_k1", "qwen3_8b_think_duopoly_k1",
+                                               "qwen3_4b_duopoly_k1", "phi4_duopoly_k1", "olmo2_13b_duopoly_k1")
+               if k in out]
         ours = [r["br_slope"] for k, r in out.items() if k.startswith(("mistral7b_", "qwen3_8b_"))]
         if duo:
             fh.write(f"\\newcommand{{\\FishRegBRDevRange}}{{${min(duo):.2f}$--${max(duo):.2f}$}}\n")
