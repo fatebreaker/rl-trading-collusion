@@ -53,7 +53,16 @@ def rivals_table(out):
             ("pricing_cheatnash_0p6b_g09", "cheaper war", "0.6B", "0.9", "0"),
             ("pricing_cheatnash_ent05_0p6b_g09", "cheaper war$^*$", "0.6B", "0.9", "0"),
             ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0"),
-            ("pricing_cheat2self_0p6b_g09", "cheater, then self", "0.6B", "0.9", "0")]
+            ("pricing_cheat2self_0p6b_g09", "cheater, then self", "0.6B", "0.9", "0"),
+            ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
+            ("pricing_tft_0p6b_g09_s2", "tit-for-tat", "0.6B", "0.9", "2"),
+            ("pricing_cheat_1p7b_g09_s1", "cheater", "1.7B", "0.9", "1"),
+            ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
+            ("pricing_cheatp03_0p6b_g09", "cheats less$^\\dagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatw09_0p6b_g09", "war $+9\\%^\\S$", "0.6B", "0.9", "0"),
+            ("pricing_cheatw30_0p6b_g09", "war $+30\\%^\\S$", "0.6B", "0.9", "0"),
+            ("pricing_cheatw30_0p6b_g09_s1", "war $+30\\%^\\S$", "0.6B", "0.9", "1"),
+            ("pricing_cheatw30_0p6b_g0", "war $+30\\%^\\S$", "0.6B", "0", "0")]
 
     def f(x, nd=2):
         return "--" if x is None or not np.isfinite(x) else f"${x:.{nd}f}$".replace("$-0.00$", "$0.00$")
@@ -171,7 +180,12 @@ def main():
                      ("pricing_cheatnash_0p6b_g09", "CheatNashFwd"), ("pricing_cheatnash_0p6b_g0", "CheatNashMyo"),
                      ("pricing_cheat_0p6b_g09_s1", "CheatFwdSeed"), ("pricing_cheat_0p6b_g09_s2", "CheatFwdSeedTwo"),
                      ("pricing_cheatnash_ent05_0p6b_g09", "CheatNashEnt"), ("pricing_cheat_1p7b_g09", "CheatMidFwd"),
-                     ("pricing_cheat2self_0p6b_g09", "CheatSelf")):
+                     ("pricing_cheat2self_0p6b_g09", "CheatSelf"),
+                     ("pricing_cheat_4b_g09", "CheatBigFwd"), ("pricing_cheat_4b_g09_s1", "CheatBigFwdSeed"),
+                     ("pricing_cheat_1p7b_g09_s1", "CheatMidFwdSeed"), ("pricing_cheat_0p6b_g09_s3", "CheatFwdSeedThree"),
+                     ("pricing_tft_0p6b_g09_s2", "TftFwdSeedTwo"), ("pricing_cheatp03_0p6b_g09", "CheatPThree"),
+                     ("pricing_cheatw09_0p6b_g09", "CheatWarNine"), ("pricing_cheatw30_0p6b_g09", "CheatWarThirty"),
+                     ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
