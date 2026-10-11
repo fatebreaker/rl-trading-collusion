@@ -222,8 +222,9 @@ def main():
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
-                                     + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo")
-                                             for f in ("Unit", "Gain", "Bench"))
+                                     + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo",
+                                                                     "MonoEarly", "MonoLate", "TwiceEarly", "TwiceLate")
+                                             for f in ("Unit", "Gain", "Bench", "Peak"))
                                      + tuple(f"PairCut{k}Gain{d}" for k in ("Two", "Five", "Ten", "Twenty")
                                              for d in ("Nine", "NineFive"))}
         log = os.path.join(ROOT, "results", "grpo", run, "log.jsonl")
@@ -306,7 +307,13 @@ def main():
                                              ("_duopoly_k1_cut2", "deviation_cut", "Shade", 0.05),
                                              ("_duopoly_k1_h20", "deviation_cut", "Long", MIN_CUT),
                                              ("_duopoly_k10_cut", "deviation_cut", "TenCut", MIN_CUT),
-                                             ("_forced2_k1", "deviation_cut", "Placebo", MIN_CUT)):
+                                             ("_forced2_k1", "deviation_cut", "Placebo", MIN_CUT),
+                                             # both firms held at the monopoly price (M) or twice cost (T) for 2 or
+                                             # 50 periods, then a 20% cut (forced-war check: which state sets off a war)
+                                             ("_forcedM2_cut20_k1", "deviation_cut", "MonoEarly", MIN_CUT),
+                                             ("_forcedM50_cut20_k1", "deviation_cut", "MonoLate", MIN_CUT),
+                                             ("_forcedT2_cut20_k1", "deviation_cut", "TwiceEarly", MIN_CUT),
+                                             ("_forcedT50_cut20_k1", "deviation_cut", "TwiceLate", MIN_CUT)):
                 fx = f1.replace("_duopoly_k1.json", tag + ".json")
                 dx = json.load(open(fx)) if os.path.exists(fx) and os.path.getsize(fx) > 0 else {}
                 t = dx.get(test)
@@ -319,6 +326,7 @@ def main():
                 m[f"Pair{tk}Unit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
                 m[f"Pair{tk}Gain"] = f"{t['cum_gain_dev']:+.2f}\\pm{t['cum_gain_dev_ci95']:.2f}"
                 m[f"Pair{tk}Bench"] = f"{r['pair'][tk]['bench']:.2f}"
+                m[f"Pair{tk}Peak"] = f"{max(r['pair'][tk]['by_lag']):.2f}"  # the largest response over the lags
             # cut-size tests: a visible cut of 2-20%, with undiscounted gains by lag, so the gain can be taken
             # at the training discount factor (0.9) as well as the audit's (0.95)
             cs = {}
