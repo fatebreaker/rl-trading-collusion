@@ -76,7 +76,10 @@ def rivals_table(out):
             ("pricing_cheatw30_0p6b_g0", "more, deeper$^\\dagger$", "0.6B", "0", "0"),
             ("pricing_cheatnash_0p6b_g09", "cheaper war", "0.6B", "0.9", "0"),
             ("pricing_cheatnash_ent05_0p6b_g09", "cheaper war$^*$", "0.6B", "0.9", "0"),
-            ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0")]
+            ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0"),
+            ("pricing_cheatexp_0p6b_g09", "cheater, wars added$^\\ddagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatexp_0p6b_g09_s1", "cheater, wars added$^\\ddagger$", "0.6B", "0.9", "1"),
+            ("pricing_cheatexp_0p6b_g0", "cheater, wars added$^\\ddagger$", "0.6B", "0", "0")]
 
     def f(x, nd=2):
         return "--" if x is None or not np.isfinite(x) else f"${x:.{nd}f}$".replace("$-0.00$", "$0.00$")
@@ -201,7 +204,9 @@ def main():
                      ("pricing_cheatw09_0p6b_g09", "CheatWarNine"), ("pricing_cheatw30_0p6b_g09", "CheatWarThirty"),
                      ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo"),
                      ("pricing_tft_llama1b_g09", "TftLlama"), ("pricing_cheat_llama1b_g09", "CheatLlama"),
-                     ("pricing_cheat_llama1b_g09_s1", "CheatLlamaSeed"), ("pricing_cheat_llama1b_g0", "CheatLlamaMyo")):
+                     ("pricing_cheat_llama1b_g09_s1", "CheatLlamaSeed"), ("pricing_cheat_llama1b_g0", "CheatLlamaMyo"),
+                     ("pricing_cheatexp_0p6b_g09", "CheatExp"), ("pricing_cheatexp_0p6b_g09_s1", "CheatExpSeed"),
+                     ("pricing_cheatexp_0p6b_g0", "CheatExpMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
@@ -225,11 +230,13 @@ def main():
             m.update(Idx=f"{r['train']['final_index']:.2f}", Prof=f"{r['train']['final_profit_over_nash']:.2f}",
                      Iters=str(len(L)))
             if "war_share" in L[0]:  # cheater rival: how the policy answers cheats (last ten iterations)
-                r["train"].update(war_share=float(np.mean([x["war_share"] for x in tail])),
-                                  war_share_first=float(np.mean([x["war_share"] for x in L[:10]])),
-                                  answer_index=float(np.nanmean([x["answer_price_index"] for x in tail])),
+                ws = "own_war_share" if "own_war_share" in L[0] else "war_share"  # without forced wars
+                ai = "own_answer_price_index" if "own_answer_price_index" in L[0] else "answer_price_index"
+                r["train"].update(war_share=float(np.nanmean([x[ws] for x in tail])),
+                                  war_share_first=float(np.nanmean([x[ws] for x in L[:10]])),
+                                  answer_index=float(np.nanmean([x[ai] for x in tail])),
                                   cheats=float(np.mean([x["cheats_per_session"] for x in tail])),
-                                  war_curve=[[x["iteration"], x["war_share"]] for x in L])
+                                  war_curve=[[x["iteration"], x[ws]] for x in L])
                 m.update(War=f"{100 * r['train']['war_share']:.0f}", WarFirst=f"{100 * r['train']['war_share_first']:.0f}",
                          AnsIdx=f"{r['train']['answer_index']:.2f}", Cheats=f"{r['train']['cheats']:.1f}")
         if f1:

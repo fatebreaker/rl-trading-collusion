@@ -29,6 +29,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import time
 from dataclasses import asdict, dataclass
@@ -87,6 +88,7 @@ class GRPOConfig:
     cheat_cut_max: float = 0.25
     deter_len: int = 10
     war_margin: float = 0.22  # a deterring price war lies this share of (p^M - p^N) below Nash and the cheat
+    explore_war: float = 0.0  # pricing vs the cheater: share of answers to a cheat replaced by a war (exploration check)
     init_adapter: str = ""  # start from another run's adapter (e.g. continue a trained policy in self-play)
 
 
@@ -283,6 +285,8 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         raise ValueError(f"pricing rival must be 'self', 'tft' or 'cheater', not {cfg.rival!r}")
     tft, cheater = cfg.rival == "tft", cfg.rival == "cheater"
     scripted = tft or cheater
+    if cfg.explore_war and not cheater:
+        raise ValueError("war exploration is for training against the cheating rival")
     S = cfg.groups * cfg.group_size
     pcfg = PricingConfig(scale=cfg.price_scale, history=cfg.history, notes=cfg.notes,
                          temperature=cfg.temperature, max_tokens=cfg.max_tokens)
@@ -297,12 +301,23 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
                              prob=cfg.cheat_prob, cut=(cfg.cheat_cut_min, cfg.cheat_cut_max),
                              deter_len=cfg.deter_len, margin=cfg.war_margin)
     backend.records = []
+    xrng = np.random.default_rng(seed + 7919)  # which answers to a cheat are replaced by a war
+    own_ans, n_inj = [], 0
     for t in range(T):
         p = act_many([(env, pricers)], backend)[0]
         if tft:
             p[:, 1] = prev
             prev = np.clip(p[:, 0], 0.0, 10.0 * env.bcfg.cost)
         elif cheater:
+            if cfg.explore_war:  # exploration check: force a war in a share of the answers to a cheat
+                thr = np.minimum(rival.pN, rival.r_prev) - rival.margin
+                inj = rival.cheat_prev & (xrng.random(S) < cfg.explore_war)
+                own = rival.cheat_prev & ~inj
+                own_ans.append(np.stack([np.clip(p[own, 0], 0.0, 10.0 * env.bcfg.cost), thr[own]], 1))
+                for s in np.flatnonzero(inj):
+                    p[s, 0] = math.floor(thr[s] * 100) / 100
+                    _force_answer(backend, s, p[s, 0])
+                n_inj += int(inj.sum())
             p[:, 1] = rival.price(t)
         q, pi = env.step(p)
         if cheater:
@@ -341,7 +356,26 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
                      war_share=rival.n_wars / max(rival.n_answers, 1),
                      answer_price_index=float(((ans - b["p_nash"]) / (b["p_mono"] - b["p_nash"])).mean())
                      if ans.size else float("nan"))
+        if cfg.explore_war:  # the policy's own answers, without the forced wars
+            own = np.concatenate(own_ans) if own_ans else np.zeros((0, 2))
+            stats.update(forced_wars_per_session=n_inj / S,
+                         own_war_share=float((own[:, 0] <= own[:, 1]).mean()) if len(own) else float("nan"),
+                         own_answer_price_index=float(((own[:, 0] - b["p_nash"]) / (b["p_mono"] - b["p_nash"])).mean())
+                         if len(own) else float("nan"))
     return samples, stats
+
+
+def _force_answer(backend, s: int, price: float) -> None:
+    """Replace session s's answer in the latest recorded batch by the same answer with `price`, so the
+    update credits the forced war as if the policy had sampled it."""
+    tok = backend.llm.get_tokenizer()
+    p_ids, o_ids = backend.records[-1][s]
+    eos = [o_ids[-1]] if o_ids and o_ids[-1] in tok.all_special_ids else []
+    text = tok.decode(o_ids, skip_special_tokens=True)
+    new, n = re.subn(r'("price"\s*:\s*)-?[0-9]*\.?[0-9]+', lambda m: m.group(1) + f"{price:.2f}", text, count=1)
+    if not n:
+        new = '{"price": ' + f"{price:.2f}" + "}"
+    backend.records[-1][s] = (p_ids, tok.encode(new, add_special_tokens=False) + eos)
 
 
 def policy_gradient_step(model, opt, samples, cfg: GRPOConfig, device) -> tuple[float, float]:
