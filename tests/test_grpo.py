@@ -119,3 +119,52 @@ def test_cheater_rival_is_deterred_by_a_price_war_only():
     rv.observe(0, np.full(S, pM), rv.price(0))
     rv.observe(1, np.full(S, pM - 0.2), rv.price(1))
     assert np.allclose(rv.price(2), pN)
+
+
+def test_ppo_step_matches_the_grpo_forward_and_learns():
+    """PPO on a tiny random Qwen3 with LoRA: its forward pass gives the GRPO update's logits, the critic learns
+    the returns, and the policy moves toward the answer with the higher return."""
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    peft = pytest.importorskip("peft")
+    from kylecollusion.grpo import GRPOConfig, _response_batch, ppo_step
+
+    torch.manual_seed(0)
+    mc = transformers.Qwen3Config(vocab_size=64, hidden_size=32, intermediate_size=64, num_hidden_layers=2,
+                                  num_attention_heads=4, num_key_value_heads=2, head_dim=8,
+                                  max_position_embeddings=256, tie_word_embeddings=True)
+    model = peft.get_peft_model(transformers.Qwen3ForCausalLM(mc), peft.LoraConfig(
+        r=4, lora_alpha=8, lora_dropout=0.0, target_modules=["q_proj", "k_proj", "v_proj", "o_proj"]))
+    cfg = GRPOConfig(game="pricing", algo="ppo", periods=4, micro_batch=4, lr=3e-3, ppo_minibatches=2,
+                     critic_lr=1e-2, critic_steps=200, entropy_coef=0.0)
+    rng = np.random.default_rng(0)
+    samples = []
+    for i in range(32):  # the answer [10, 11] returns two more than [20, 21]; returns fall with the period
+        t = int(rng.integers(0, 4))
+        good = i % 2 == 0
+        samples.append((rng.integers(30, 60, rng.integers(5, 12)).tolist(), [10, 11, 0] if good else [20, 21, 0],
+                        (4 - t) + (1.0 if good else -1.0), t))
+    ids, mask, pos, _, targets, _ = _response_batch(samples[:4])
+    R = targets.shape[1]
+    with torch.no_grad():
+        a = model(input_ids=ids, attention_mask=mask, position_ids=pos, logits_to_keep=R + 1).logits[:, :-1]
+        h = model.get_base_model().model(input_ids=ids, attention_mask=mask, position_ids=pos).last_hidden_state
+        assert torch.allclose(a, model.get_base_model().lm_head(h[:, -(R + 1):-1]), atol=1e-5)
+
+    def log_odds(prompt):
+        out = []
+        for o in ([10, 11, 0], [20, 21, 0]):
+            ids, mask, pos, _, targets, _ = _response_batch([(prompt, o)])
+            with torch.no_grad():
+                lg = model(input_ids=ids, attention_mask=mask, position_ids=pos, logits_to_keep=4).logits[:, :-1]
+            out.append(float(torch.log_softmax(lg, -1).gather(-1, targets[..., None]).sum()))
+        return out[0] - out[1]
+
+    before = log_odds([40, 41, 42, 43, 44, 45])
+    W, bt = torch.zeros(32, requires_grad=True), torch.zeros(4, requires_grad=True)
+    opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=cfg.lr, weight_decay=0.0)
+    opt_v = torch.optim.Adam([W, bt], lr=cfg.critic_lr)
+    for it in range(6):
+        _, _, diag = ppo_step(model, opt, (W, bt), opt_v, samples, cfg, "cpu", seed=it)
+    assert diag["explained_var"] > 0.5
+    assert log_odds([40, 41, 42, 43, 44, 45]) > before + 0.5

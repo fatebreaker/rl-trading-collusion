@@ -22,6 +22,9 @@ updates onto copying the value V from the prompt, after which every sample in
 a group is identical and the gradient vanishes. Log-probabilities use the
 rollout temperature, so the loss matches the sampling distribution. Rollouts run in vLLM with the latest adapter hot-swapped in; training
 uses the token ids vLLM generated, so nothing is re-tokenised.
+
+algo="ppo" (pricing game) keeps the rollouts and swaps the update for PPO: a learned value baseline instead of
+the group mean, and several clipped steps per batch (`ppo_step`).
 """
 
 from __future__ import annotations
@@ -93,6 +96,17 @@ class GRPOConfig:
     explore_placebo: float = 0.0  # control: share of answers to no cheat replaced by the same war price
     format_penalty: bool = False  # pricing: an answer that does not parse earns nothing that period (training reward only)
     init_adapter: str = ""  # start from another run's adapter (e.g. continue a trained policy in self-play)
+    # algo "ppo" (pricing only) replaces the group baseline by a learned value: a linear critic on the policy's last
+    # hidden state at the end of the prompt (features detached, so the critic does not move the policy) plus a
+    # learned constant per period, fitted to the return-to-go; the advantage is the return-to-go minus the value,
+    # normalised over the batch, and the policy takes ppo_epochs passes over each batch in ppo_minibatches steps
+    # with the clipped probability ratio (and the same entropy bonus)
+    algo: str = "grpo"
+    ppo_epochs: int = 2
+    ppo_minibatches: int = 4
+    clip_eps: float = 0.2
+    critic_lr: float = 1e-3
+    critic_steps: int = 100  # full-batch Adam steps of the critic per iteration
 
 
 class CheaterRival:
@@ -169,15 +183,21 @@ class GroupRNG:
         return np.repeat(self.rng.integers(high, size=self._n(size)), self.G)
 
 
+def discounted_returns(profit: np.ndarray, gamma: float) -> np.ndarray:
+    """profit (T, ...) -> discounted return-to-go (T, ...)."""
+    ret = np.zeros_like(profit)
+    acc = np.zeros(profit.shape[1:])
+    for t in range(profit.shape[0] - 1, -1, -1):
+        acc = profit[t] + gamma * acc
+        ret[t] = acc
+    return ret
+
+
 def group_advantages(profit: np.ndarray, gamma: float, group_size: int) -> np.ndarray:
     """profit (T, S, I) -> advantages (T, S, I): discounted return-to-go minus
     its group mean, scaled by the batch sd of the centred returns."""
     T, S, I = profit.shape
-    ret = np.zeros_like(profit)
-    acc = np.zeros((S, I))
-    for t in range(T - 1, -1, -1):
-        acc = profit[t] + gamma * acc
-        ret[t] = acc
+    ret = discounted_returns(profit, gamma)
     g = ret.reshape(T, S // group_size, group_size, I)
     centred = (g - g.mean(2, keepdims=True)).reshape(T, S, I)
     sd = centred.std()
@@ -343,13 +363,15 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
     reward = profit[:, :, act]
     if cfg.format_penalty:  # the market keeps the last price; the answer itself earns nothing
         reward = np.where(failed[:, :, act], 0.0, reward)
-    adv = group_advantages(reward, cfg.gamma, cfg.group_size)  # policy firms only
+    ppo = cfg.algo == "ppo"  # PPO: the return-to-go in Nash profits and the period (the critic sets the baseline)
+    adv = (discounted_returns(reward, cfg.gamma) / env.bench["pi_nash"] if ppo
+           else group_advantages(reward, cfg.gamma, cfg.group_size))  # policy firms only
     samples = []
     for t in range(T):
         for k, (p_ids, o_ids) in enumerate(records[t]):
             s, j = divmod(k, len(act))
             if o_ids and (cfg.explore_credit or not forced[t, s]):  # uncredited forced wars stay out
-                samples.append((p_ids, o_ids, float(adv[t, s, j])))
+                samples.append((p_ids, o_ids, float(adv[t, s, j])) + ((t,) if ppo else ()))
     b = env.bench
     idx = (np.clip(prices, 0.0, 10.0 * env.bcfg.cost).mean(-1) - b["p_nash"]) / (b["p_mono"] - b["p_nash"])
     stats = {
@@ -357,9 +379,9 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         "price_index_second_half": float(idx[T // 2:].mean()),
         "price_sd_across_sessions": float(prices[T // 2:].mean((0, 2)).std()),
         "profit_over_nash": float(profit.mean() / b["pi_nash"]),
-        "zero_adv_share": float(np.mean([a == 0.0 for _, _, a in samples])) if samples else 1.0,
+        "zero_adv_share": (float(np.mean([x[2] == 0.0 for x in samples])) if samples else 1.0) if not ppo else float("nan"),
         "parse_fail": pricers.n_fail / max(pricers.n_calls, 1),
-        "resp_tokens": float(np.mean([len(o) for _, o, _ in samples])) if samples else 0.0,
+        "resp_tokens": float(np.mean([len(x[1]) for x in samples])) if samples else 0.0,
     }
     if scripted:  # the policy's own price index and profit
         stats.update(policy_price_index_second_half=float(
@@ -440,6 +462,107 @@ def policy_gradient_step(model, opt, samples, cfg: GRPOConfig, device) -> tuple[
     return total, ent_sum / max(n_tok, 1)
 
 
+def _response_batch(batch):
+    """Left-padded prompt+response ids (responses end aligned) and the response targets and mask."""
+    import torch
+
+    L = max(len(x[0]) + len(x[1]) for x in batch)
+    R = max(len(x[1]) for x in batch)
+    ids = torch.zeros((len(batch), L), dtype=torch.long)
+    mask = torch.zeros((len(batch), L), dtype=torch.long)
+    rmask = torch.zeros((len(batch), R), dtype=torch.float32)
+    targets = torch.zeros((len(batch), R), dtype=torch.long)
+    for r, x in enumerate(batch):
+        seq = x[0] + x[1]
+        ids[r, L - len(seq):] = torch.tensor(seq)
+        mask[r, L - len(seq):] = 1
+        targets[r, R - len(x[1]):] = torch.tensor(x[1])
+        rmask[r, R - len(x[1]):] = 1.0
+    pos = (mask.cumsum(1) - 1).clamp(min=0)
+    last = torch.tensor([L - len(x[1]) - 1 for x in batch])  # the last prompt token
+    return ids, mask, pos, rmask, targets, last
+
+
+def ppo_step(model, opt, critic, opt_v, samples, cfg: GRPOConfig, device, seed: int = 0):
+    """PPO update on samples (prompt ids, response ids, return-to-go, period). Advantages are the return-to-go
+    minus the critic's value (computed before the update), normalised over the batch; the policy takes
+    cfg.ppo_epochs passes in cfg.ppo_minibatches steps each, maximising the clipped surrogate plus the entropy
+    bonus per response token; then the critic (W, b_t) is fitted to the return-to-go on the detached features.
+    Returns (loss, mean response-token entropy, diagnostics)."""
+    import torch
+
+    base = model.get_base_model()
+    W, bt = critic
+
+    def forward(batch):
+        ids, mask, pos, rmask, targets, last = _response_batch(batch)
+        R = targets.shape[1]
+        h = base.model(input_ids=ids.to(device), attention_mask=mask.to(device),
+                       position_ids=pos.to(device)).last_hidden_state
+        logits = base.lm_head(h[:, -(R + 1):-1]).float() / max(cfg.temperature, 1e-6)
+        logp_all = torch.log_softmax(logits, -1)
+        logp = logp_all.gather(-1, targets.to(device)[..., None])[..., 0]
+        ent = -(logp_all.exp() * logp_all).sum(-1)
+        feat = h[torch.arange(len(batch), device=device), last.to(device)].detach().float()
+        return logp, ent, rmask.to(device), feat
+
+    n = len(samples)
+    by_len = sorted(range(n), key=lambda j: len(samples[j][0]) + len(samples[j][1]))
+    G = torch.tensor([x[2] for x in samples], dtype=torch.float32, device=device)
+    tt = torch.tensor([x[3] for x in samples], dtype=torch.long, device=device)
+    old = [None] * n
+    feats = torch.zeros((n, W.shape[0]), dtype=torch.float32, device=device)
+    model.train()
+    with torch.no_grad():  # the behaviour policy's log-probs and the critic's features
+        for b in range(0, n, cfg.micro_batch):
+            mb = by_len[b:b + cfg.micro_batch]
+            logp, _, rm, feat = forward([samples[j] for j in mb])
+            for r, j in enumerate(mb):
+                old[j] = logp[r, rm.shape[1] - len(samples[j][1]):].clone()
+            feats[mb] = feat
+        V = feats @ W + bt[tt]
+        A = G - V
+        A = (A - A.mean()) / (A.std() + 1e-8)
+    rng = np.random.default_rng(seed)
+    total, ent_sum, n_tok_all, clipped, n_steps = 0.0, 0.0, 0, 0.0, 0
+    for _ in range(cfg.ppo_epochs):
+        for part in np.array_split(rng.permutation(n), cfg.ppo_minibatches):
+            part = sorted(part.tolist(), key=lambda j: len(samples[j][0]) + len(samples[j][1]))
+            n_tok = sum(len(samples[j][1]) for j in part)
+            for b in range(0, len(part), cfg.micro_batch):
+                mb = part[b:b + cfg.micro_batch]
+                logp, ent, rm, _ = forward([samples[j] for j in mb])
+                R = rm.shape[1]
+                oldp = torch.zeros_like(logp)
+                for r, j in enumerate(mb):
+                    oldp[r, R - len(samples[j][1]):] = old[j]
+                ratio = torch.exp(logp - oldp)
+                a = A[mb][:, None]
+                surr = torch.minimum(ratio * a, ratio.clamp(1 - cfg.clip_eps, 1 + cfg.clip_eps) * a)
+                loss = -((surr + cfg.entropy_coef * ent) * rm).sum() / n_tok
+                loss.backward()
+                total += float(loss.detach())
+                ent_sum += float((ent.detach() * rm).sum())
+                n_tok_all += int(rm.sum())
+                clipped += float((((ratio.detach() - 1).abs() > cfg.clip_eps).float() * rm).sum())
+            torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], cfg.max_grad_norm)
+            opt.step()
+            opt.zero_grad(set_to_none=True)
+            n_steps += 1
+    for _ in range(cfg.critic_steps):  # fit the critic to this batch's returns
+        lv = ((feats @ W + bt[tt] - G) ** 2).mean()
+        opt_v.zero_grad(set_to_none=True)
+        lv.backward()
+        opt_v.step()
+    with torch.no_grad():
+        resid = G - (feats @ W + bt[tt])
+        diag = {"value_mse_before": float(((G - V) ** 2).mean()),
+                "explained_var": float(1 - (G - V).var() / (G.var() + 1e-8)),
+                "explained_var_fit": float(1 - resid.var() / (G.var() + 1e-8)),
+                "clip_frac": clipped / max(n_tok_all, 1)}
+    return total / max(n_steps, 1), ent_sum / max(n_tok_all, 1), diag
+
+
 def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
     import torch
     from peft import LoraConfig, get_peft_model
@@ -447,6 +570,8 @@ def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
     from vllm import LLM
     from vllm.lora.request import LoRARequest
 
+    if cfg.algo not in ("grpo", "ppo") or (cfg.algo == "ppo" and cfg.game != "pricing"):
+        raise ValueError(f"algo must be 'grpo', or 'ppo' in the pricing game, not {cfg.algo!r}")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "config.json"), "w") as fh:
         json.dump(asdict(cfg), fh, indent=1)
@@ -466,6 +591,11 @@ def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
     model = get_peft_model(base, lcfg).to(train_device)
     opt = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=cfg.lr,
                             weight_decay=0.0)
+    critic = opt_v = None
+    if cfg.algo == "ppo":  # linear value head on the last prompt token's hidden state, plus a constant per period
+        W = torch.zeros(base.config.hidden_size, device=train_device, requires_grad=True)
+        bt = torch.zeros(cfg.periods, device=train_device, requires_grad=True)
+        critic, opt_v = (W, bt), torch.optim.Adam([W, bt], lr=cfg.critic_lr)
 
     log_path = os.path.join(out_dir, "log.jsonl")
     start = 0
@@ -479,6 +609,11 @@ def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
             last = saved[-1]
             path = os.path.join(out_dir, f"adapter_{last:04d}")
             set_peft_model_state_dict(model, load_file(os.path.join(path, "adapter_model.safetensors")))
+            if critic is not None and os.path.exists(os.path.join(path, "critic.pt")):
+                st = torch.load(os.path.join(path, "critic.pt"))
+                with torch.no_grad():
+                    critic[0].copy_(st["W"])
+                    critic[1].copy_(st["bt"])
             backend.lora = LoRARequest(f"it{last}", last + 1, path)
             start = last + 1
             with open(log_path, "w") as fh:  # drop iterations after the checkpoint
@@ -499,16 +634,22 @@ def train(cfg: GRPOConfig, out_dir: str, train_device: str = "cuda:0") -> None:
         play = rollout_pricing if cfg.game == "pricing" else rollout
         samples, stats = play(backend, cfg, seed=cfg.seed * 100003 + it)
         t1 = time.time()
-        loss, entropy = policy_gradient_step(model, opt, samples, cfg, train_device)
+        if cfg.algo == "ppo":
+            loss, entropy, extra = ppo_step(model, opt, critic, opt_v, samples, cfg, train_device, seed=cfg.seed * 100003 + it)
+        else:
+            loss, entropy = policy_gradient_step(model, opt, samples, cfg, train_device)
+            extra = {}
         t2 = time.time()
         saved = (it + 1) % cfg.save_every == 0 or it + 1 == cfg.iterations
         path = os.path.join(out_dir, f"adapter_{it:04d}") if saved else tmp
         if os.path.exists(path):
             shutil.rmtree(path)
         model.save_pretrained(path)
+        if critic is not None:
+            torch.save({"W": critic[0].detach().cpu(), "bt": critic[1].detach().cpu()}, os.path.join(path, "critic.pt"))
         # a fresh id makes vLLM load the new weights
         backend.lora = LoRARequest(f"it{it}", it + 2, path)
-        rec = {"iteration": it, **stats, "loss": loss, "entropy": entropy,
+        rec = {"iteration": it, **stats, "loss": loss, "entropy": entropy, **extra,
                "n_samples": len(samples),
                "rollout_s": round(t1 - t0, 1), "train_s": round(t2 - t1, 1), "saved": saved}
         with open(log_path, "a") as fh:
