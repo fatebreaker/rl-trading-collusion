@@ -81,7 +81,10 @@ def rivals_table(out):
             ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0"),
             ("pricing_cheatexp_0p6b_g09", "cheater, wars added$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexp_0p6b_g09_s1", "cheater, wars added$^\\ddagger$", "0.6B", "0.9", "1"),
-            ("pricing_cheatexp_0p6b_g0", "cheater, wars added$^\\ddagger$", "0.6B", "0", "0")]
+            ("pricing_cheatexp_0p6b_g09_s2", "cheater, wars added$^\\ddagger$", "0.6B", "0.9", "2"),
+            ("pricing_cheatexp_0p6b_g0", "cheater, wars added$^\\ddagger$", "0.6B", "0", "0"),
+            ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatexppl_0p6b_g09", "war price, no cheat$^\\ddagger$", "0.6B", "0.9", "0")]
 
     def f(x, nd=2):
         return "--" if x is None or not np.isfinite(x) else f"${x:.{nd}f}$".replace("$-0.00$", "$0.00$")
@@ -209,7 +212,8 @@ def main():
                      ("pricing_cheat_llama1b_g09_s1", "CheatLlamaSeed"), ("pricing_cheat_llama1b_g0", "CheatLlamaMyo"),
                      ("pricing_cheat_llama1b_fp_g09_s1", "CheatLlamaFpSeed"), ("pricing_cheat_llama1b_fp_g0", "CheatLlamaFpMyo"),
                      ("pricing_cheatexp_0p6b_g09", "CheatExp"), ("pricing_cheatexp_0p6b_g09_s1", "CheatExpSeed"),
-                     ("pricing_cheatexp_0p6b_g0", "CheatExpMyo")):
+                     ("pricing_cheatexp_0p6b_g0", "CheatExpMyo"), ("pricing_cheatexp_0p6b_g09_s2", "CheatExpSeedTwo"),
+                     ("pricing_cheatexpnc_0p6b_g09", "CheatExpNoCredit"), ("pricing_cheatexppl_0p6b_g09", "CheatExpPlacebo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
@@ -248,6 +252,10 @@ def main():
                 ok = np.isfinite(wv) & (cw > 0)
                 r["train"]["war_share_all"] = float((wv[ok] * cw[ok]).sum() / cw[ok].sum()) if ok.any() else float("nan")
                 m.update(WarAll=f"{100 * r['train']['war_share_all']:.2f}")
+            if "own_other_war_share" in L[0]:  # the policy's own war prices where it answers no cheat
+                r["train"]["other_war_share"] = float(np.nanmean([x["own_other_war_share"] for x in tail]))
+                m.update(OtherWar=f"{100 * r['train']['other_war_share']:.1f}",
+                         Unprov=f"{np.mean([x['unprovoked_per_session'] for x in tail]):.2f}")
         if f1:
             d = json.load(open(f1))
             r["pair"] = {"index": tci(d["per_session"]["index"]), "profit_over_nash": tci(d["per_session"]["profit_over_nash"]),
