@@ -210,7 +210,7 @@ def main():
                      ("pricing_cheatexp_0p6b_g09", "CheatExp"), ("pricing_cheatexp_0p6b_g09_s1", "CheatExpSeed"),
                      ("pricing_cheatexp_0p6b_g0", "CheatExpMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
-                                     "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
+                                     "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo")
                                              for f in ("Unit", "Gain", "Bench"))
@@ -241,6 +241,12 @@ def main():
                                   war_curve=[[x["iteration"], x[ws]] for x in L])
                 m.update(War=f"{100 * r['train']['war_share']:.0f}", WarFirst=f"{100 * r['train']['war_share_first']:.0f}",
                          AnsIdx=f"{r['train']['answer_index']:.2f}", Cheats=f"{r['train']['cheats']:.1f}")
+                # over all of training: the share of its answers to a cheat that are wars (iterations weighted by cheats)
+                cw = np.array([x["cheats_per_session"] for x in L], float)
+                wv = np.array([x[ws] for x in L], float)
+                ok = np.isfinite(wv) & (cw > 0)
+                r["train"]["war_share_all"] = float((wv[ok] * cw[ok]).sum() / cw[ok].sum()) if ok.any() else float("nan")
+                m.update(WarAll=f"{100 * r['train']['war_share_all']:.2f}")
         if f1:
             d = json.load(open(f1))
             r["pair"] = {"index": tci(d["per_session"]["index"]), "profit_over_nash": tci(d["per_session"]["profit_over_nash"]),
@@ -321,6 +327,13 @@ def main():
         out[run] = r
         for f, v in m.items():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
+    # the four seeds of the first design: the range of their war shares over all of training
+    wa = [out[k]["train"].get("war_share_all") for k in ("pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1",
+                                                        "pricing_cheat_0p6b_g09_s2", "pricing_cheat_0p6b_g09_s3")
+          if k in out and "train" in out[k]]
+    wa = [w for w in wa if w is not None and np.isfinite(w)]
+    if wa:
+        macros["GrpoCheatWarAllMin"], macros["GrpoCheatWarAllMax"] = f"{100 * min(wa):.2f}", f"{100 * max(wa):.2f}"
     # the base models in the same state-matched placebo
     for base, bk in (("qwen3p0p6b", "GrpoBase"), ("llamap3p2p1bpinstruct", "GrpoBaseLlama")):
         fb = os.path.join(ROOT, "results", "grpo_pricing_audit", f"base_{base}_forced2_k1.json")
