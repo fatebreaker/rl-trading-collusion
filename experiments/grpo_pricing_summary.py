@@ -28,6 +28,7 @@ MIN_CUT = 0.1  # smallest mean deviation (index units) for a response per unit
 RUNS = {"pricing_0p6b_g09": ("Qwen3-0.6B", 0.9, "SmallFwd"), "pricing_0p6b_g0": ("Qwen3-0.6B", 0.0, "SmallMyo"),
         "pricing_1p7b_g09": ("Qwen3-1.7B", 0.9, "MidFwd"), "pricing_1p7b_g0": ("Qwen3-1.7B", 0.0, "MidMyo"),
         "pricing_llama1b_g09": ("Llama-3.2-1B", 0.9, "LlamaFwd"),
+        "pricing_llama1b_fp_g09": ("Llama-3.2-1B", 0.9, "LlamaFpFwd"),  # with the format penalty
         "pricing_0p6b_g09_grp16": ("Qwen3-0.6B", 0.9, "SmallFwdGrp")}  # groups of 16 sessions
 FIELDS = ("Idx", "IdxCI", "Prof", "ProfIdx", "BRSize", "BRUnit", "BRBench", "Gain", "CutUnit", "CutBench",
           "CutGain", "TenIdx", "TenProf", "Anchor", "Markup", "TenMarkup", "TrainIdx", "TrainProf", "Iters",
@@ -67,7 +68,7 @@ def rivals_table(out):
             ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
             ("pricing_tft_llama1b_g09", "tit-for-tat", "Llama 1B", "0.9", "0"),
             ("pricing_cheat_llama1b_g09", "cheater", "Llama 1B", "0.9", "0"),
-            ("pricing_cheat_llama1b_g09_s1", "cheater", "Llama 1B", "0.9", "1"),
+            ("pricing_cheat_llama1b_fp_g09_s1", "cheater", "Llama 1B$^\\S$", "0.9", "1"),
             ("pricing_cheat_llama1b_g0", "cheater", "Llama 1B", "0", "0"),
             ("pricing_cheatp03_0p6b_g09", "cheats less$^\\dagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatw09_0p6b_g09", "cheats more$^\\dagger$", "0.6B", "0.9", "0"),
@@ -205,6 +206,7 @@ def main():
                      ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo"),
                      ("pricing_tft_llama1b_g09", "TftLlama"), ("pricing_cheat_llama1b_g09", "CheatLlama"),
                      ("pricing_cheat_llama1b_g09_s1", "CheatLlamaSeed"), ("pricing_cheat_llama1b_g0", "CheatLlamaMyo"),
+                     ("pricing_cheat_llama1b_fp_g09_s1", "CheatLlamaFpSeed"),
                      ("pricing_cheatexp_0p6b_g09", "CheatExp"), ("pricing_cheatexp_0p6b_g09_s1", "CheatExpSeed"),
                      ("pricing_cheatexp_0p6b_g0", "CheatExpMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
