@@ -26,7 +26,8 @@ from fish_regression import benchmarks  # noqa: E402
 MIN_CUT = 0.1  # smallest mean deviation (index units) for a response per unit
 # run directory -> (model, discount factor of the credit, macro key)
 RUNS = {"pricing_0p6b_g09": ("Qwen3-0.6B", 0.9, "SmallFwd"), "pricing_0p6b_g0": ("Qwen3-0.6B", 0.0, "SmallMyo"),
-        "pricing_1p7b_g09": ("Qwen3-1.7B", 0.9, "MidFwd"), "pricing_1p7b_g0": ("Qwen3-1.7B", 0.0, "MidMyo")}
+        "pricing_1p7b_g09": ("Qwen3-1.7B", 0.9, "MidFwd"), "pricing_1p7b_g0": ("Qwen3-1.7B", 0.0, "MidMyo"),
+        "pricing_llama1b_g09": ("Llama-3.2-1B", 0.9, "LlamaFwd")}
 FIELDS = ("Idx", "IdxCI", "Prof", "ProfIdx", "BRSize", "BRUnit", "BRBench", "Gain", "CutUnit", "CutBench",
           "CutGain", "TenIdx", "TenProf", "Anchor", "Markup", "TenMarkup", "TrainIdx", "TrainProf", "Iters",
           "PlaceboUnit")
@@ -63,11 +64,15 @@ def rivals_table(out):
             ("pricing_cheat2self_0p6b_g09", "cheater, then self", "0.6B", "0.9", "0"),
             ("pricing_cheat_1p7b_g09", "cheater", "1.7B", "0.9", "0"), ("pricing_cheat_1p7b_g09_s1", "cheater", "1.7B", "0.9", "1"),
             ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
+            ("pricing_tft_llama1b_g09", "tit-for-tat", "Llama 1B", "0.9", "0"),
+            ("pricing_cheat_llama1b_g09", "cheater", "Llama 1B", "0.9", "0"),
+            ("pricing_cheat_llama1b_g09_s1", "cheater", "Llama 1B", "0.9", "1"),
+            ("pricing_cheat_llama1b_g0", "cheater", "Llama 1B", "0", "0"),
             ("pricing_cheatp03_0p6b_g09", "cheats less$^\\dagger$", "0.6B", "0.9", "0"),
-            ("pricing_cheatw09_0p6b_g09", "war $+9\\%^\\S$", "0.6B", "0.9", "0"),
-            ("pricing_cheatw30_0p6b_g09", "war $+30\\%^\\S$", "0.6B", "0.9", "0"),
-            ("pricing_cheatw30_0p6b_g09_s1", "war $+30\\%^\\S$", "0.6B", "0.9", "1"),
-            ("pricing_cheatw30_0p6b_g0", "war $+30\\%^\\S$", "0.6B", "0", "0"),
+            ("pricing_cheatw09_0p6b_g09", "cheats more$^\\dagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatw30_0p6b_g09", "more, deeper$^\\dagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatw30_0p6b_g09_s1", "more, deeper$^\\dagger$", "0.6B", "0.9", "1"),
+            ("pricing_cheatw30_0p6b_g0", "more, deeper$^\\dagger$", "0.6B", "0", "0"),
             ("pricing_cheatnash_0p6b_g09", "cheaper war", "0.6B", "0.9", "0"),
             ("pricing_cheatnash_ent05_0p6b_g09", "cheaper war$^*$", "0.6B", "0.9", "0"),
             ("pricing_cheatnash_0p6b_g0", "cheaper war", "0.6B", "0", "0")]
@@ -193,7 +198,9 @@ def main():
                      ("pricing_cheat_1p7b_g09_s1", "CheatMidFwdSeed"), ("pricing_cheat_0p6b_g09_s3", "CheatFwdSeedThree"),
                      ("pricing_tft_0p6b_g09_s2", "TftFwdSeedTwo"), ("pricing_cheatp03_0p6b_g09", "CheatPThree"),
                      ("pricing_cheatw09_0p6b_g09", "CheatWarNine"), ("pricing_cheatw30_0p6b_g09", "CheatWarThirty"),
-                     ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo")):
+                     ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo"),
+                     ("pricing_tft_llama1b_g09", "TftLlama"), ("pricing_cheat_llama1b_g09", "CheatLlama"),
+                     ("pricing_cheat_llama1b_g09_s1", "CheatLlamaSeed"), ("pricing_cheat_llama1b_g0", "CheatLlamaMyo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
@@ -283,17 +290,18 @@ def main():
         out[run] = r
         for f, v in m.items():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
-    # the base model in the same state-matched placebo
-    fb = os.path.join(ROOT, "results", "grpo_pricing_audit", "base_qwen3p0p6b_forced2_k1.json")
-    db = json.load(open(fb)) if os.path.exists(fb) and os.path.getsize(fb) > 0 else {}
-    t = db.get("deviation_cut")
-    if t and t["deviation_size"] >= MIN_CUT:
-        u = (t["rival_aggression"][1] / t["deviation_size"], abs(t["rival_aggression_ci95"][1] / t["deviation_size"]))
-        macros["GrpoBasePlaceboUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
-        macros["GrpoBasePlaceboBench"] = f"{benchmarks(np.asarray(db['prices_sessions'], float), 1.0)['cut_slope']:.2f}"
-        out["base_placebo"] = {"per_unit": u, "gain": (t["cum_gain_dev"], t["cum_gain_dev_ci95"])}
-    else:
-        macros["GrpoBasePlaceboUnit"] = macros["GrpoBasePlaceboBench"] = "--"
+    # the base models in the same state-matched placebo
+    for base, bk in (("qwen3p0p6b", "GrpoBase"), ("llamap3p2p1bpinstruct", "GrpoBaseLlama")):
+        fb = os.path.join(ROOT, "results", "grpo_pricing_audit", f"base_{base}_forced2_k1.json")
+        db = json.load(open(fb)) if os.path.exists(fb) and os.path.getsize(fb) > 0 else {}
+        t = db.get("deviation_cut")
+        if t and t["deviation_size"] >= MIN_CUT:
+            u = (t["rival_aggression"][1] / t["deviation_size"], abs(t["rival_aggression_ci95"][1] / t["deviation_size"]))
+            macros[f"{bk}PlaceboUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+            macros[f"{bk}PlaceboBench"] = f"{benchmarks(np.asarray(db['prices_sessions'], float), 1.0)['cut_slope']:.2f}"
+            out[f"base_placebo_{base}"] = {"per_unit": u, "gain": (t["cum_gain_dev"], t["cum_gain_dev_ci95"])}
+        else:
+            macros[f"{bk}PlaceboUnit"] = macros[f"{bk}PlaceboBench"] = "--"
     # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
     # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
     for tag, key in (("cheat_vs_tft", "TftResp"), ("tft_vs_cheat", "CheatResp")):
@@ -310,27 +318,29 @@ def main():
         else:
             for f_ in ("Unit", "Gain", "Idx"):
                 macros[f"GrpoCross{key}{f_}"] = "--"
-    # the untrained base model, audited as the adapters (Figure 1's starting point)
-    fb1 = os.path.join(ROOT, "results", "grpo_pricing_audit", "base_qwen3p0p6b_duopoly_k1.json")
-    db1 = json.load(open(fb1)) if os.path.exists(fb1) and os.path.getsize(fb1) > 0 else {}
-    if db1.get("deviation_cut"):
-        t = db1["deviation_cut"]
-        po = tci(db1["per_session"]["profit_over_nash"])
-        out["base_k1"] = {"index": tci(db1["per_session"]["index"]), "profit_over_nash": po,
-                          "profit_index": ((po[0] - 1) / (pi_ratio - 1), po[1] / (pi_ratio - 1)),
-                          "cut_per_unit": (t["rival_aggression"][1] / t["deviation_size"],
-                                           abs(t["rival_aggression_ci95"][1] / t["deviation_size"])),
-                          "cut_by_lag": [x / t["deviation_size"] for x in t["rival_aggression"]],
-                          "bench": benchmarks(np.asarray(db1["prices_sessions"], float), 1.0)}
-        macros["GrpoBaseIdx"] = f"{out['base_k1']['index'][0]:.1f}"
-        macros["GrpoBaseProf"] = f"{po[0]:.2f}"
-        u = out["base_k1"]["cut_per_unit"]
-        macros["GrpoBaseCutUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
-        fb10 = fb1.replace("_k1.json", "_k10.json")
-        if os.path.exists(fb10):
-            macros["GrpoBaseTenIdx"] = f"{json.load(open(fb10))['summary']['index']:.1f}"
-    for k in ("GrpoBaseIdx", "GrpoBaseProf", "GrpoBaseCutUnit", "GrpoBaseTenIdx"):
-        macros.setdefault(k, "--")
+    # the untrained base models, audited as the adapters (Figure 1's starting point: Qwen3-0.6B)
+    for base, bk, ok in (("qwen3p0p6b", "GrpoBase", "base_k1"), ("llamap3p2p1bpinstruct", "GrpoBaseLlama", "base_llama_k1")):
+        fb1 = os.path.join(ROOT, "results", "grpo_pricing_audit", f"base_{base}_duopoly_k1.json")
+        db1 = json.load(open(fb1)) if os.path.exists(fb1) and os.path.getsize(fb1) > 0 else {}
+        if db1.get("deviation_cut"):
+            t = db1["deviation_cut"]
+            po = tci(db1["per_session"]["profit_over_nash"])
+            out[ok] = {"index": tci(db1["per_session"]["index"]), "profit_over_nash": po,
+                       "profit_index": ((po[0] - 1) / (pi_ratio - 1), po[1] / (pi_ratio - 1)),
+                       "cut_per_unit": (t["rival_aggression"][1] / t["deviation_size"],
+                                        abs(t["rival_aggression_ci95"][1] / t["deviation_size"])),
+                       "cut_by_lag": [x / t["deviation_size"] for x in t["rival_aggression"]],
+                       "bench": benchmarks(np.asarray(db1["prices_sessions"], float), 1.0),
+                       "parse_fail": db1["parse_fail_rate"]}
+            macros[f"{bk}Idx"] = f"{out[ok]['index'][0]:.1f}"
+            macros[f"{bk}Prof"] = f"{po[0]:.2f}"
+            u = out[ok]["cut_per_unit"]
+            macros[f"{bk}CutUnit"] = f"{abs(u[0]) if abs(u[0]) < 0.005 else u[0]:.2f}\\pm{u[1]:.2f}"
+            fb10 = fb1.replace("_k1.json", "_k10.json")
+            if os.path.exists(fb10) and os.path.getsize(fb10) > 0:
+                macros[f"{bk}TenIdx"] = f"{json.load(open(fb10))['summary']['index']:.1f}"
+        for k in ("Idx", "Prof", "CutUnit", "TenIdx"):
+            macros.setdefault(bk + k, "--")
     rivals_table(out)
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)

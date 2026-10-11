@@ -1,8 +1,9 @@
 """Payoffs of simple pricing policies against the scripted rival that cheats unless a price war
 deters it (kylecollusion.grpo.CheaterRival), in the training design: 16-period episodes, returns
 discounted at gamma = 0.9. Shows that answering each cheat with a war pays, but only through
-deterrence (a myopic agent loses by it), in both designs we train against, and that matching a cheat
-pays at once, about as much as a best response.
+deterrence (a myopic agent loses by it), in every design we train against, and that matching a cheat
+pays at once, about as much as a best response, unless the rival cheats often and deeply, when pricing
+at Nash beats every answer but the war.
 
     python experiments/cheater_payoffs.py
 """
@@ -46,12 +47,17 @@ def run(policy, design, gamma=0.9, S=20000, T=16, seed=0):
 
 def main():
     span = PM - PN
-    war = {"below Nash": lambda rv: np.where(rv.cheat_prev, np.minimum(PN, rv.r_prev) - 0.12, PM),
-           "at Nash": lambda rv: np.where(rv.cheat_prev, np.minimum(PN, rv.r_prev), PM)}
-    designs = {"below Nash": dict(prob=0.5, cut=(0.10, 0.25), deter_len=10, margin=0.22),
-               "at Nash": dict(prob=0.5, cut=(0.10, 0.20), deter_len=10, margin=0.0)}
-    for name, design in designs.items():
-        pol = {"war after a cheat": war[name],
+    below = lambda rv: np.where(rv.cheat_prev, np.minimum(PN, rv.r_prev) - 0.12, PM)  # noqa: E731
+    at = lambda rv: np.where(rv.cheat_prev, np.minimum(PN, rv.r_prev), PM)  # noqa: E731
+    # name: (rival design, the war that deters it)
+    designs = {"first design": (dict(prob=0.5, cut=(0.10, 0.25), deter_len=10, margin=0.22), below),
+               "second design (cheaper war)": (dict(prob=0.5, cut=(0.10, 0.20), deter_len=10, margin=0.0), at),
+               "cheats less (probability 0.3)": (dict(prob=0.3, cut=(0.10, 0.25), deter_len=10, margin=0.22), below),
+               "cheats more (probability 0.8)": (dict(prob=0.8, cut=(0.10, 0.25), deter_len=10, margin=0.22), below),
+               "cheats more and deeper (probability 0.8, cuts 20-40%, 14-period deterrence)":
+                   (dict(prob=0.8, cut=(0.20, 0.40), deter_len=14, margin=0.22), below)}
+    for name, (design, war) in designs.items():
+        pol = {"war after a cheat": war,
                "best response after a cheat": lambda rv: np.where(rv.cheat_prev, br(rv.r_prev), PM),
                "match after a cheat": lambda rv: np.where(rv.cheat_prev, rv.r_prev, PM),
                "never answer": lambda rv: np.full(rv.u.shape[0], PM),
@@ -59,15 +65,17 @@ def main():
                "Nash": lambda rv: np.full(rv.u.shape[0], PN)}
         res = {k: run(p, design) for k, p in pol.items()}
         best = max(v[0] for k, v in res.items() if k != "war after a cheat")
-        print(f"war {name} (margin {design['margin'] * span:.3f}, cuts {design['cut']}):")
+        print(f"{name} (war margin {design['margin'] * span:.3f}, cuts {design['cut']}, cheat probability "
+              f"{design['prob']}):")
         for k, (ret, wars, cheats) in res.items():
             print(f"  {k:30s} return {ret:.3f} ({100 * (ret / res['never answer'][0] - 1):+.1f}% vs never "
-                  f"answering)  wars {wars:.1f}  cheats {cheats:.1f} per episode")
+                  f"answering, {100 * (ret / res['Nash'][0] - 1):+.1f}% vs Nash)  wars {wars:.1f}  cheats {cheats:.1f} "
+                  f"per episode")
         print(f"  war vs best alternative: {100 * (res['war after a cheat'][0] / best - 1):+.1f}%")
         r = (1 - np.mean(design["cut"])) * PM  # a typical cheat; the rival is back at p^M next period
         stage = lambda p: 0.5 * profit(p, PM) + 0.5 * profit(p, r)  # noqa: E731
-        cost = stage(br(r)) - stage(float(war[name](type("R", (), {"cheat_prev": np.array([True]),
-                                                              "r_prev": np.array([r])})())[0]))
+        cost = stage(br(r)) - stage(float(war(type("R", (), {"cheat_prev": np.array([True]),
+                                                            "r_prev": np.array([r])})())[0]))
         print(f"  one-period cost of the war against a best response: {cost:.3f} "
               f"({100 * cost / profit(PN, PN):.0f}% of a period's Nash profit)")
 
