@@ -468,10 +468,10 @@ def main():
         out[run] = r
         for f, v in m.items():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
-    # the four seeds of the first design: the range of their war shares over all of training
-    wa = [out[k]["train"].get("war_share_all") for k in ("pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1",
-                                                        "pricing_cheat_0p6b_g09_s2", "pricing_cheat_0p6b_g09_s3")
-          if k in out and "train" in out[k]]
+    # the seeds of the first design, once trained: the range of their war shares over all of training
+    wa = [out[k]["train"].get("war_share_all") for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3",
+                                                                                                 "_s4", "_s5")]
+          if k in out and "train" in out[k] and not training(k)]
     wa = [w for w in wa if w is not None and np.isfinite(w)]
     if wa:
         macros["GrpoCheatWarAllMin"], macros["GrpoCheatWarAllMax"] = f"{100 * min(wa):.2f}", f"{100 * max(wa):.2f}"
