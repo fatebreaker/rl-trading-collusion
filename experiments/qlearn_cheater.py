@@ -94,6 +94,40 @@ def play(policy_fn, grid, cfg, b, S, T, rng, learn=None):
     return stats
 
 
+def pair_test(Q, grid, cfg, b, T=100, t_dev=50, cut=0.10, delta=0.95, H=9):
+    """Each learner paired with a copy of itself (greedy play, both starting at the grid price nearest p^M), as the
+    GRPO pairs are audited: where the pair settles, and a one-period cut of about 10% by one copy in period t_dev
+    (at least one grid step), against the same pair without it. Play is deterministic, so the two paths differ only
+    by the cut. Returns per-learner arrays: the price index over the 25 periods before the cut, the deviator's
+    discounted gain over H periods (Nash profits per period) and the rival's response per unit of the cut by lag."""
+    S, _, m = Q.shape
+    si = np.arange(S)
+    pM, pN = b["p_mono"], b["p_nash"]
+    start = int(np.abs(grid - pM).argmin())
+
+    def run(dev):
+        a0, a1 = np.full(S, start), np.full(S, start)
+        P = np.zeros((T, S, 2))
+        for t in range(T):
+            n0, n1 = Q[si, a0 * m + a1].argmax(-1), Q[si, a1 * m + a0].argmax(-1)
+            if dev and t == t_dev:
+                d = np.abs(grid[None, :] - (1 - cut) * grid[n0][:, None]).argmin(1)
+                n0 = np.where(d >= n0, np.maximum(n0 - 1, 0), d)
+            a0, a1 = n0, n1
+            P[t, :, 0], P[t, :, 1] = grid[a0], grid[a1]
+        return P
+
+    P0, P1 = run(False), run(True)
+    pr0, pr1 = (profits(P, cfg)[..., 0] / b["pi_nash"] for P in (P0, P1))
+    w = delta ** np.arange(H)
+    gain = ((pr1[t_dev:t_dev + H] - pr0[t_dev:t_dev + H]) * w[:, None]).sum(0)
+    size = P0[t_dev, :, 0] - P1[t_dev, :, 0]
+    resp = (P0[t_dev:t_dev + H, :, 1] - P1[t_dev:t_dev + H, :, 1]) / np.where(size > 0, size, np.nan)
+    index = (P0[t_dev - 25:t_dev].mean(axis=(0, 2)) - pN) / (pM - pN)
+    return {"index": index.tolist(), "gain": gain.tolist(), "cut_size": size.tolist(),
+            "response_by_lag": resp.T.tolist(), "profit_over_nash": pr0[t_dev - 25:t_dev].mean(0).tolist()}
+
+
 def summarise(st):
     return {"war_share": st["wars"] / max(st["answers"], 1), "answer_price": st["ans_price"] / max(st["answers"], 1),
             "cheats_per_period": st["cheats"] / st["periods"], "profit_over_nash": st["profit"] / st["periods"]}
@@ -162,6 +196,7 @@ def main():
 
     out["ref_match"] = summarise(play(match, grid, cfg, b, S, a.eval, np.random.default_rng(a.seed + 2)))
     out["ref_war"] = summarise(play(war_or_mono, grid, cfg, b, S, a.eval, np.random.default_rng(a.seed + 3)))
+    out["pair"] = pair_test(Q, grid, cfg, b)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     json.dump(out, open(a.out, "w"), indent=1)
     ws = np.array([x["war_share"] for x in per])
@@ -169,6 +204,9 @@ def main():
           f"{(ws > 0.5).sum()}/{S}; profit/Nash {out['greedy']['profit_over_nash']:.2f} (match "
           f"{out['ref_match']['profit_over_nash']:.2f}, war {out['ref_war']['profit_over_nash']:.2f}); "
           f"{out['train_seconds']:.0f}s")
+    pi, pg = np.array(out["pair"]["index"]), np.array(out["pair"]["gain"])
+    print(f"paired with itself: index median {np.median(pi):.2f}; premium (index >= 0.5) {(pi >= 0.5).sum()}/{S}; "
+          f"a 10% cut loses in {(pg < 0).sum()}/{S} (mean gain {pg.mean():+.2f}); both {((pi >= 0.5) & (pg < 0)).sum()}")
 
 
 if __name__ == "__main__":

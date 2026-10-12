@@ -124,6 +124,48 @@ def rivals_table(out):
     open(os.path.join(ROOT, "paper", "table_grpo_rivals.tex"), "w").write("\n".join(L) + "\n")
 
 
+def tally_table(out):
+    """Main-text table: what each training setup teaches, counted over its runs (seeds). A run counts once its pair
+    is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
+    pair's price index is 0.5 or more. Enforced: a premium, and a 10% cut from it loses (95% interval below zero)."""
+    groups = [("Tit-for-tat", True, ["pricing_tft_0p6b_g09", "pricing_tft_0p6b_g09_s1", "pricing_tft_0p6b_g09_s2"]),
+              ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
+                                  "pricing_cheat_0p6b_g09_s3"]),
+              (r"\quad PPO", False, ["pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1",
+                                     "pricing_cheatppo_0p6b_g09_s2"]),
+              (r"\quad Qwen3-1.7B, 4B", False, ["pricing_cheat_1p7b_g09", "pricing_cheat_1p7b_g09_s1",
+                                                "pricing_cheat_4b_g09", "pricing_cheat_4b_g09_s1"]),
+              (r"\quad Llama-3.2-1B", False, ["pricing_cheat_llama1b_g09", "pricing_cheat_llama1b_fp_g09_s1",
+                                              "pricing_cheat_llama1b_fp_g09_s2", "pricing_cheat_llama1b_fp_g09_s3"]),
+              (r"\quad wars forced", False, ["pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
+                                             "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3",
+                                             "pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
+              (r"\quad \enspace not credited, no cheat", False, ["pricing_cheatexpnc_0p6b_g09",
+                                                                  "pricing_cheatexppl_0p6b_g09"])]
+    L = ["\\begin{tabular}{@{}lcccc@{}}", "\\toprule",
+         "Trained against & runs & war & premium & enforced \\\\", "\\midrule"]
+    for name, tft, runs in groups:
+        rs = [out[r] for r in runs if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+        n = len(rs)
+        if not n:
+            L.append(f"{name} & -- & -- & -- & -- \\\\"); continue
+        war = sum(r["train"].get("war_share", 0) >= 0.10 for r in rs)
+        prem = [r["pair"]["index"][0] >= 0.5 for r in rs]
+        enf = sum(p and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for p, r in zip(prem, rs))
+        pend = f" % {len(runs) - n} pending" if n < len(runs) else ""
+        L.append(f"{name} & {n} & {'--' if tft else war} & {sum(prem)} & {enf} \\\\" + pend)
+        if name.endswith("Llama-3.2-1B"):  # tabular Q-learners against the same cheater (experiments/qlearn_cheater.py)
+            fq = os.path.join(ROOT, "results", "qlearn_cheater", "g09.json")
+            if os.path.exists(fq):
+                q = json.load(open(fq))
+                ws = np.array([x["war_share"] for x in q["per_session"]])
+                qi, qg = np.array(q["pair"]["index"]), np.array(q["pair"]["gain"])
+                L.append(f"\\quad tabular Q-learning & {len(ws)} & {(ws >= 0.10).sum()} & {(qi >= 0.5).sum()} & "
+                         f"{((qi >= 0.5) & (qg < 0)).sum()} \\\\")
+    L += ["\\bottomrule", "\\end{tabular}"]
+    open(os.path.join(ROOT, "paper", "table_rl_tally.tex"), "w").write("\n".join(L) + "\n")
+
+
 def main():
     out, macros = {}, {}
     pi_ratio = 0.33749 / 0.22296  # monopoly / Nash profit
@@ -434,6 +476,7 @@ def main():
         for k in ("Idx", "Prof", "CutUnit", "TenIdx"):
             macros.setdefault(bk + k, "--")
     rivals_table(out)
+    tally_table(out)
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_grpopricing.tex"), "w") as fh:
