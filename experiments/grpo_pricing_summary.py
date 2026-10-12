@@ -485,6 +485,11 @@ def main():
         enf = [p and "cut_gain" in out[k]["pair"] and sum(out[k]["pair"]["cut_gain"]) < 0 for p, k in zip(prem, cs)]
         macros.update(GrpoCheatSeedsWord=words[len(cs)], GrpoCheatEnfOf=f"{words[sum(enf)]} of {words[len(cs)]}",
                       GrpoCheatNoPremOf=f"{words[len(cs) - sum(prem)]} of {words[len(cs)]}")
+        # the exact (Clopper-Pearson) 95% interval for the share of seeds whose copies enforce
+        e, n = sum(enf), len(cs)
+        lo = stats.beta.ppf(0.025, e, n - e + 1) if e > 0 else 0.0
+        hi = stats.beta.ppf(0.975, e + 1, n - e) if e < n else 1.0
+        macros.update(GrpoCheatEnfLo=f"{100 * lo:.0f}", GrpoCheatEnfHi=f"{100 * hi:.0f}")
         nw = []
         for k in cs:
             L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
