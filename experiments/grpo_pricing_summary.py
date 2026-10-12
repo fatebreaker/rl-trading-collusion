@@ -432,7 +432,9 @@ def main():
                                              ("_forcedM2_cut20_k1", "deviation_cut", "MonoEarly", MIN_CUT),
                                              ("_forcedM50_cut20_k1", "deviation_cut", "MonoLate", MIN_CUT),
                                              ("_forcedT2_cut20_k1", "deviation_cut", "TwiceEarly", MIN_CUT),
-                                             ("_forcedT50_cut20_k1", "deviation_cut", "TwiceLate", MIN_CUT)):
+                                             ("_forcedT50_cut20_k1", "deviation_cut", "TwiceLate", MIN_CUT),
+                                             # the main audit's 10% cut at sampling temperature 0.7, not the training 1.0
+                                             ("_duopoly_k1_temp07", "deviation_cut", "TempSeven", MIN_CUT)):
                 fx = f1.replace("_duopoly_k1.json", tag + ".json")
                 dx = json.load(open(fx)) if os.path.exists(fx) and os.path.getsize(fx) > 0 else {}
                 t = dx.get(test)
