@@ -142,7 +142,7 @@ def tally_table(out):
     is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
     pair's price index is 0.5 or more. Enforced: a premium, and a 10% cut from it loses (95% interval below zero)."""
     groups = [("Tit-for-tat", True, ["pricing_tft_0p6b_g09", "pricing_tft_0p6b_g09_s1", "pricing_tft_0p6b_g09_s2"]),
-              (r"\quad Qwen3-1.7B, Llama-3.2-1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
+              (r"\quad Qwen3-1.7B, Llama 1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
               ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
                                   "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5"]),
               (r"\quad PPO", False, ["pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1",
@@ -513,7 +513,8 @@ def main():
         if pa:
             enf = sum(out[k]["pair"]["index"][0] >= 0.5 and "cut_gain" in out[k]["pair"] and
                       sum(out[k]["pair"]["cut_gain"]) < 0 for k in pa)
-            macros["GrpoCheatPpoEnfOf"] = f"{words[enf]} of {words[len(pa)]}"
+            macros["GrpoCheatPpoEnfOf"] = (f"all {words[enf]}" if enf == len(pa) > 2 else
+                                           f"{words[enf]} of {words[len(pa)]}")
     # the base models in the same state-matched placebo
     for base, bk in (("qwen3p0p6b", "GrpoBase"), ("llamap3p2p1bpinstruct", "GrpoBaseLlama")):
         fb = os.path.join(ROOT, "results", "grpo_pricing_audit", f"base_{base}_forced2_k1.json")
