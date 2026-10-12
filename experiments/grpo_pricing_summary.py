@@ -302,7 +302,8 @@ def main():
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost", "PairAtCost",
-                                     "PairZero", "PairCostFirst", "PairCostLast", "ExplVar", "UniWar")
+                                     "PairZero", "PairCostFirst", "PairCostLast", "PairNashFirst", "PairNashLast", "PairNashN",
+                                     "ExplVar", "UniWar")
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo",
                                                                      "MonoEarly", "MonoLate", "TwiceEarly", "TwiceLate")
                                              for f in ("Unit", "Gain", "Bench", "Peak"))
@@ -361,6 +362,10 @@ def main():
             first = [int(np.argmax(b)) + 1 for b in (P1 <= c1).all(axis=2) if b.any()]
             if first:
                 m.update(PairCostFirst=str(min(first)), PairCostLast=str(max(first)))
+            pn = d["bench"].get("p_nash")  # ... and in which both first price at or below Nash
+            first = [int(np.argmax(b)) + 1 for b in (P1 <= pn).all(axis=2) if b.any()] if pn else []
+            if first:
+                m.update(PairNashFirst=str(min(first)), PairNashLast=str(max(first)), PairNashN=str(len(first)))
             if d.get("deviation"):
                 g, gc = d["deviation"]["cum_gain_dev"], d["deviation"]["cum_gain_dev_ci95"]
                 r["pair"]["br_gain"] = (g, gc)
