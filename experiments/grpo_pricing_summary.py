@@ -581,7 +581,13 @@ def main():
         # price index, of how much of a 10% cut a copy follows (per unit), of the cut's gain over nine periods and of
         # how much of the cut is still copied eight periods later
         ps = [k for p, k in zip(prem, cs) if p]
-        macros.update(GrpoCheatPremOf=f"{words[len(ps)]} of {words[len(cs)]}")
+        macros.update(GrpoCheatPremOf=f"{words[len(ps)]} of {words[len(cs)]}",
+                      GrpoCheatPremLoseOf=f"{words[sum(enf)]} of {words[len(ps)]}")
+        # the premium seeds whose 10% cut pays in the audit: how many, in words, and the range of their gains
+        pay = [out[k]["pair"]["cut_gain"][0] for k in ps if "cut_gain" in out[k]["pair"] and
+               out[k]["pair"]["cut_gain"][0] >= 0]
+        macros.update(GrpoCheatPremPayWord=words[len(pay)],
+                      GrpoCheatPremPayGain=(", ".join(f"{g:+.2f}" for g in pay) if pay else "--"))
         for nm, fx, fm in (("Idx", lambda q: q["index"][0], "{:.2f}"),
                            ("CutUnit", lambda q: q["cut_per_unit"][0] if "cut_per_unit" in q else np.nan, "{:.2f}"),
                            ("CutGain", lambda q: q["cut_gain"][0] if "cut_gain" in q else np.nan, "{:+.2f}"),
