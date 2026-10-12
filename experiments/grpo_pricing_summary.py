@@ -171,8 +171,8 @@ def tally_table(out):
     for name, tft, runs in groups:
         rs = [out[r] for r in runs if r in out and audited(out[r]) and not training(r)]
         n = len(rs)
-        if not n:
-            L.append(f"{name} & -- & -- & -- & -- \\\\"); continue
+        if not n:  # no run of the group finished and audited yet: no row (a submitted table shows no empty rows)
+            L.append(f"% {name}: {len(runs)} pending"); continue
         war = sum(r["train"].get("war_share", 0) >= 0.10 for r in rs)
         prem = [r["pair"]["index"][0] >= 0.5 for r in rs]
         enf = sum(p and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for p, r in zip(prem, rs))
