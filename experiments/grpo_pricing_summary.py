@@ -565,6 +565,11 @@ def main():
             else:
                 macros[f"{key}{sfx}Share"] = macros[f"{key}{sfx}First"] = macros[f"{key}{sfx}Median"] = "--"
     macros["GrpoRefTrainedFirstMin"] = f"{int(np.floor(100 * min(first_trained)))}" if first_trained else "--"
+    # Table D.1's note on the row of the run trained with the war price shown, once that row is in the table
+    rr = out.get("pricing_cheatref_0p6b_g09", {})
+    macros["GrpoRefRowNote"] = ("$^\\|$Every period's prompt also shows ``Reference price: 1.34.'' (a war against any "
+                                "cheat). " if (rr.get("train") or rr.get("pair")) and not training("pricing_cheatref_0p6b_g09")
+                                else "")
     macros["GrpoRefTrainedN"] = words[len(first_trained)] if first_trained else "--"
     # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
     # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
