@@ -226,7 +226,7 @@ def tally_table(out):
     is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
     pair's price index is 0.5 or more. Enforced: a premium, and a 10% cut from it loses (95% interval below zero)."""
     groups = [("Tit-for-tat", True, ["pricing_tft_0p6b_g09", "pricing_tft_0p6b_g09_s1", "pricing_tft_0p6b_g09_s2"]),
-              (r"\quad Qwen3-1.7B, Llama 1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
+              (r"\quad Qwen3-1.7B, Llama-3.2-1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
               ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
                                   "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5",
                                   "pricing_cheat_0p6b_g09_s6", "pricing_cheat_0p6b_g09_s7"]),
@@ -586,8 +586,14 @@ def main():
         # price index, of how much of a 10% cut a copy follows (per unit), of the cut's gain over nine periods and of
         # how much of the cut is still copied eight periods later
         ps = [k for p, k in zip(prem, cs) if p]
+        # ... and in how many seeds a best-response deviation (a cut of about 16% from twice cost) loses
+        brl = sum(p and "br_gain" in out[k]["pair"] and sum(out[k]["pair"]["br_gain"]) < 0 for p, k in zip(prem, cs))
         macros.update(GrpoCheatPremOf=f"{words[len(ps)]} of {words[len(cs)]}",
-                      GrpoCheatPremLoseOf=f"{words[sum(enf)]} of {words[len(ps)]}")
+                      GrpoCheatPremLoseOf=f"{words[sum(enf)]} of {words[len(ps)]}",
+                      GrpoCheatBrLoseOf=f"{words[brl]} of {words[len(cs)]}", GrpoCheatEnfN=str(sum(enf)),
+                      GrpoCheatBrLoseN=str(brl), GrpoCheatSeedsN=str(len(cs)),
+                      GrpoCheatPremBrLoseOf=(f"all {words[len(ps)]}" if brl == len(ps) else
+                                             f"{words[brl]} of {words[len(ps)]}"))
         # the premium seeds whose 10% cut pays in the audit: how many, in words, and the range of their gains
         pay = [out[k]["pair"]["cut_gain"][0] for k in ps if "cut_gain" in out[k]["pair"] and
                out[k]["pair"]["cut_gain"][0] >= 0]
