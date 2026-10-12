@@ -47,6 +47,13 @@ def latest_audit(run):
     return fs[-1] if fs else None
 
 
+def audited(r):
+    """Whether a run's pair audit is complete: the cut test is in (the audit's file is first written without it), or,
+    for pairs whose cut test was not run, the audit at prices x10, which follows it."""
+    p = r.get("pair", {})
+    return "index" in p and ("cut_gain" in p or "index_k10" in p)
+
+
 def training(run, quiet=1800):
     """Whether a run is still training: short of its iterations, with its log written in the last half hour."""
     log, cfg = (os.path.join(ROOT, "results", "grpo", run, x) for x in ("log.jsonl", "config.json"))
@@ -159,7 +166,7 @@ def tally_table(out):
     L = ["\\begin{tabular}{@{}lcccc@{}}", "\\toprule",
          "Trained against & runs & war & premium & enforced \\\\", "\\midrule"]
     for name, tft, runs in groups:
-        rs = [out[r] for r in runs if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+        rs = [out[r] for r in runs if r in out and audited(out[r]) and not training(r)]
         n = len(rs)
         if not n:
             L.append(f"{name} & -- & -- & -- & -- \\\\"); continue
@@ -184,11 +191,11 @@ def tally_table(out):
     for g in groups:
         by.setdefault(g[0], g[2])
     ro = [out[r] for k in (r"\quad Qwen3-1.7B, 4B", r"\quad Llama-3.2-1B") for r in by[k]
-          if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+          if r in out and audited(out[r]) and not training(r)]
     enf = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in ro)
     m = {"GrpoOtherEnf": f"{words[enf]} of {words[len(ro)]} pairs {'enforces' if enf == 1 else 'enforce'}"} if ro else {}
     # the seeds with one forced war in ten whose copies enforce (war at the pair's own price), in words
-    rf = [out[r] for r in by["Cheater, wars forced"] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+    rf = [out[r] for r in by["Cheater, wars forced"] if r in out and audited(out[r]) and not training(r)]
     ef = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in rf)
     if rf:
         m["GrpoExpEnfOf"] = f"{words[ef]} of {words[len(rf)]}"
@@ -472,7 +479,7 @@ def main():
     # cut loses against) and how many hold no premium; and how many wars each sampled over all of training
     words = "none one two three four five six seven eight".split()
     cs = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5")]
-          if k in out and "index" in out[k].get("pair", {}) and not training(k)]
+          if k in out and audited(out[k]) and not training(k)]
     if cs:
         prem = [out[k]["pair"]["index"][0] >= 0.5 for k in cs]
         enf = [p and "cut_gain" in out[k]["pair"] and sum(out[k]["pair"]["cut_gain"]) < 0 for p, k in zip(prem, cs)]
@@ -487,7 +494,7 @@ def main():
     # shares of their own answers to a cheat that are wars (last ten iterations)
     fw = [out[k]["train"]["war_share"] for k in ("pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
                                                  "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3")
-          if k in out and "index" in out[k].get("pair", {}) and not training(k) and "war_share" in out[k].get("train", {})]
+          if k in out and audited(out[k]) and not training(k) and "war_share" in out[k].get("train", {})]
     if fw:
         macros.update(GrpoCheatExpWarMin=f"{100 * min(fw):.0f}", GrpoCheatExpWarMax=f"{100 * max(fw):.0f}",
                       GrpoCheatExpRuns=str(len(fw)))
@@ -502,7 +509,7 @@ def main():
             nw.append(np.nansum([x["war_share"] * x["cheats_per_session"] * 32 for x in L]))
         lo, hi = f"{min(nw):.0f}", f"{max(nw):.0f}"
         macros.update(GrpoCheatPpoSeedsWord=words[len(pp)], GrpoCheatPpoWarsRange=lo if lo == hi else f"{lo} to {hi}")
-        pa = [k for k in pp if "index" in out[k].get("pair", {})]
+        pa = [k for k in pp if audited(out[k])]
         if pa:
             enf = sum(out[k]["pair"]["index"][0] >= 0.5 and "cut_gain" in out[k]["pair"] and
                       sum(out[k]["pair"]["cut_gain"]) < 0 for k in pa)
