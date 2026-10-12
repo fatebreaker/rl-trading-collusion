@@ -90,6 +90,8 @@ def rivals_table(out):
             ("pricing_cheatexp_0p6b_g09_s3", "cheater, wars added$^\\ddagger$", "0.6B", "0.9", "3"),
             ("pricing_cheatexp_0p6b_g0", "cheater, wars added$^\\ddagger$", "0.6B", "0", "0"),
             ("pricing_cheatexp03_0p6b_g09", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatexp03_0p6b_g09_s1", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "1"),
+            ("pricing_cheatexpppo_0p6b_g09", "wars added, PPO$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexp_llama1b_fp_g09", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "0"),
             ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexppl_0p6b_g09", "war price, no cheat$^\\ddagger$", "0.6B", "0.9", "0")]
@@ -227,7 +229,8 @@ def main():
                      ("pricing_cheatexpnc_0p6b_g09", "CheatExpNoCredit"), ("pricing_cheatexppl_0p6b_g09", "CheatExpPlacebo"),
                      ("pricing_cheatexp03_0p6b_g09", "CheatExpLow"), ("pricing_cheatexp_llama1b_fp_g09", "CheatExpLlama"),
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
-                     ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo")):
+                     ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
+                     ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost", "PairAtCost",
