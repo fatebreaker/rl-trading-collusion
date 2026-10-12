@@ -72,6 +72,7 @@ def rivals_table(out):
             ("pricing_cheat_0p6b_g09_s2", "cheater", "0.6B", "0.9", "2"), ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
             ("pricing_cheat_0p6b_g09_s4", "cheater", "0.6B", "0.9", "4"), ("pricing_cheat_0p6b_g09_s5", "cheater", "0.6B", "0.9", "5"),
             ("pricing_cheat_0p6b_g09_s6", "cheater", "0.6B", "0.9", "6"), ("pricing_cheat_0p6b_g09_s7", "cheater", "0.6B", "0.9", "7"),
+            ("pricing_cheat_0p6b_g09_s8", "cheater", "0.6B", "0.9", "8"),
             ("pricing_cheat_0p6b_g0", "cheater", "0.6B", "0", "0"),
             ("pricing_cheatppo_0p6b_g09", "cheater, PPO", "0.6B", "0.9", "0"),
             ("pricing_cheatppo_0p6b_g09_s1", "cheater, PPO", "0.6B", "0.9", "1"),
@@ -80,6 +81,7 @@ def rivals_table(out):
             ("pricing_cheatref_0p6b_g09", "cheater, war price shown$^\\|$", "0.6B", "0.9", "0"),
             ("pricing_cheat_1p7b_g09", "cheater", "1.7B", "0.9", "0"), ("pricing_cheat_1p7b_g09_s1", "cheater", "1.7B", "0.9", "1"),
             ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
+            ("pricing_cheat_4b_g09_s2", "cheater", "4B", "0.9", "2"),
             ("pricing_tft_llama1b_g09", "tit-for-tat", "Llama 1B", "0.9", "0"),
             ("pricing_cheat_llama1b_g09", "cheater", "Llama 1B", "0.9", "0"),
             ("pricing_cheat_llama1b_g0", "cheater", "Llama 1B", "0", "0"),
@@ -111,6 +113,7 @@ def rivals_table(out):
             ("pricing_cheatexp_llama1b_fp_g09_s1", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "1"),
             ("pricing_cheatexp_4b_g09", "cheater, wars added$^\\ddagger$", "4B", "0.9", "0"),
             ("pricing_cheatexp_4b_g09_s1", "cheater, wars added$^\\ddagger$", "4B", "0.9", "1"),
+            ("pricing_cheatexp_4b_g09_s2", "cheater, wars added$^\\ddagger$", "4B", "0.9", "2"),
             ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexppl_0p6b_g09", "war price, no cheat$^\\ddagger$", "0.6B", "0.9", "0")]
 
@@ -150,11 +153,15 @@ def refprobe_table():
     rows = [("Qwen3-0.6B, untrained", "--", "base_qwen3p0p6b_duopoly")]
     for lab, pre, ad, seeds in (("vs tit-for-tat", "pricing_tft_0p6b_g09", "0149", ("", "_s1", "_s2")),
                                 ("vs cheater", "pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3", "_s4", "_s5",
-                                                                                  "_s6", "_s7")),
+                                                                                  "_s6", "_s7", "_s8")),
                                 ("vs cheater, PPO", "pricing_cheatppo_0p6b_g09", "0149", ("", "_s1", "_s2")),
                                 ("forced wars", "pricing_cheatexp_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3"))):
         for s_ in seeds:
             rows.append((lab, str(int(s_[2:]) if s_ else 0), f"{pre}{s_}_adapter_{ad}_duopoly"))
+    for lab, pre, seeds in (("Qwen3-4B, vs cheater", "pricing_cheat_4b_g09", ("", "_s1", "_s2")),
+                            ("Qwen3-4B, forced wars", "pricing_cheatexp_4b_g09", ("", "_s1", "_s2"))):
+        for s_ in seeds:
+            rows.append((lab, str(int(s_[2:]) if s_ else 0), f"{pre}{s_}_adapter_0149_duopoly"))
     rows += [("Llama-3.2-1B, untrained", "--", "base_llamap3p2p1bpinstruct_duopoly"),
              ("Llama, vs cheater", "1", "pricing_cheat_llama1b_fp_g09_s1_adapter_0199_duopoly"),
              ("Llama, vs cheater", "2", "pricing_cheat_llama1b_fp_g09_s2_adapter_0199_duopoly"),
@@ -235,11 +242,13 @@ def tally_table(out):
               (r"\quad Qwen3-1.7B, Llama-3.2-1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
               ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
                                   "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5",
-                                  "pricing_cheat_0p6b_g09_s6", "pricing_cheat_0p6b_g09_s7"]),
+                                  "pricing_cheat_0p6b_g09_s6", "pricing_cheat_0p6b_g09_s7",
+                                  "pricing_cheat_0p6b_g09_s8"]),
               (r"\quad PPO", False, ["pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1",
                                      "pricing_cheatppo_0p6b_g09_s2"]),
               (r"\quad Qwen3-1.7B, 4B", False, ["pricing_cheat_1p7b_g09", "pricing_cheat_1p7b_g09_s1",
-                                                "pricing_cheat_4b_g09", "pricing_cheat_4b_g09_s1"]),
+                                                "pricing_cheat_4b_g09", "pricing_cheat_4b_g09_s1",
+                                                "pricing_cheat_4b_g09_s2"]),
               (r"\quad Llama-3.2-1B", False, ["pricing_cheat_llama1b_g09", "pricing_cheat_llama1b_fp_g09_s1",
                                               "pricing_cheat_llama1b_fp_g09_s2", "pricing_cheat_llama1b_fp_g09_s3"]),
               # the other designs of the cheating rival (Appendix D): cheats less or more often, deeper, a cheaper war
@@ -250,7 +259,8 @@ def tally_table(out):
                                                "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3"]),
               (r"\quad 3 in 100", False, ["pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
               (r"\quad Llama-3.2-1B", False, ["pricing_cheatexp_llama1b_fp_g09", "pricing_cheatexp_llama1b_fp_g09_s1"]),
-              (r"\quad Qwen3-4B", False, ["pricing_cheatexp_4b_g09", "pricing_cheatexp_4b_g09_s1"]),
+              (r"\quad Qwen3-4B", False, ["pricing_cheatexp_4b_g09", "pricing_cheatexp_4b_g09_s1",
+                                         "pricing_cheatexp_4b_g09_s2"]),
               (r"\quad PPO", False, ["pricing_cheatexpppo_0p6b_g09", "pricing_cheatexpppo_0p6b_g09_s1"]),
               (r"\quad not credited", False, ["pricing_cheatexpnc_0p6b_g09"]),
               (r"\quad war price, no cheat", False, ["pricing_cheatexppl_0p6b_g09"]),
@@ -389,6 +399,7 @@ def main():
                      ("pricing_cheatnash_ent05_0p6b_g09", "CheatNashEnt"), ("pricing_cheat_1p7b_g09", "CheatMidFwd"),
                      ("pricing_cheat2self_0p6b_g09", "CheatSelf"),
                      ("pricing_cheat_4b_g09", "CheatBigFwd"), ("pricing_cheat_4b_g09_s1", "CheatBigFwdSeed"),
+                     ("pricing_cheat_4b_g09_s2", "CheatBigFwdSeedTwo"), ("pricing_cheat_0p6b_g09_s8", "CheatFwdSeedEight"),
                      ("pricing_cheat_1p7b_g09_s1", "CheatMidFwdSeed"), ("pricing_cheat_0p6b_g09_s3", "CheatFwdSeedThree"),
                      ("pricing_cheat_0p6b_g09_s4", "CheatFwdSeedFour"), ("pricing_cheat_0p6b_g09_s5", "CheatFwdSeedFive"),
                      ("pricing_cheat_0p6b_g09_s6", "CheatFwdSeedSix"), ("pricing_cheat_0p6b_g09_s7", "CheatFwdSeedSeven"),
@@ -407,6 +418,7 @@ def main():
                      ("pricing_cheatexp03_0p6b_g09", "CheatExpLow"), ("pricing_cheatexp_llama1b_fp_g09", "CheatExpLlama"),
                      ("pricing_cheatexp_llama1b_fp_g09_s1", "CheatExpLlamaSeed"),
                      ("pricing_cheatexp_4b_g09", "CheatExpFourB"), ("pricing_cheatexp_4b_g09_s1", "CheatExpFourBSeed"),
+                     ("pricing_cheatexp_4b_g09_s2", "CheatExpFourBSeedTwo"),
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
                      ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo"),
@@ -568,7 +580,7 @@ def main():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
     # the seeds of the first design, once trained: the range of their war shares over all of training
     wa = [out[k]["train"].get("war_share_all") for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3",
-                                                                                                 "_s4", "_s5", "_s6", "_s7")]
+                                                                                                 "_s4", "_s5", "_s6", "_s7", "_s8")]
           if k in out and "train" in out[k] and not training(k)]
     wa = [w for w in wa if w is not None and np.isfinite(w)]
     if wa:
@@ -576,7 +588,7 @@ def main():
     # the seeds of the first design whose pairs are audited, in words for the text: how many enforce (a premium a 10%
     # cut loses against) and how many hold no premium; and how many wars each sampled over all of training
     words = "none one two three four five six seven eight".split()
-    cs = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7")]
+    cs = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7", "_s8")]
           if k in out and audited(out[k]) and not training(k)]
     if cs:
         prem = [out[k]["pair"]["index"][0] >= 0.5 for k in cs]
@@ -622,7 +634,7 @@ def main():
     # the seeds of the first design that finished training, over their last ten iterations: the range of their price
     # and answer indices, the largest war share (with the second design's), and the range of the share of groups
     # whose samples all agree, which give no gradient
-    fin = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7")]
+    fin = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7", "_s8")]
            if k in out and "war_share" in out[k].get("train", {}) and not training(k)]
     if fin:
         ix = [out[k]["train"]["final_index"] for k in fin]
@@ -722,7 +734,7 @@ def main():
     # price, and how many hold it (in at least 90% of all periods)
     first_trained, hold = [], 0
     for pre, ad, seeds in (("pricing_tft_0p6b_g09", "0149", ("", "_s1", "_s2")),
-                           ("pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7")),
+                           ("pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7", "_s8")),
                            ("pricing_cheatppo_0p6b_g09", "0149", ("", "_s1", "_s2")),
                            ("pricing_cheatexp_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3"))):
         for s_ in seeds:
