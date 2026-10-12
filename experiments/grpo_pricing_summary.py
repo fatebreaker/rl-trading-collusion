@@ -109,6 +109,8 @@ def rivals_table(out):
             ("pricing_cheatuni_0p6b_g09_s2", "random prices added$^\\ddagger$", "0.6B", "0.9", "2"),
             ("pricing_cheatexp_llama1b_fp_g09", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "0"),
             ("pricing_cheatexp_llama1b_fp_g09_s1", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "1"),
+            ("pricing_cheatexp_4b_g09", "cheater, wars added$^\\ddagger$", "4B", "0.9", "0"),
+            ("pricing_cheatexp_4b_g09_s1", "cheater, wars added$^\\ddagger$", "4B", "0.9", "1"),
             ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexppl_0p6b_g09", "war price, no cheat$^\\ddagger$", "0.6B", "0.9", "0")]
 
@@ -196,6 +198,7 @@ def tally_table(out):
                                                "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3"]),
               (r"\quad 3 in 100", False, ["pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
               (r"\quad Llama-3.2-1B", False, ["pricing_cheatexp_llama1b_fp_g09", "pricing_cheatexp_llama1b_fp_g09_s1"]),
+              (r"\quad Qwen3-4B", False, ["pricing_cheatexp_4b_g09", "pricing_cheatexp_4b_g09_s1"]),
               (r"\quad PPO", False, ["pricing_cheatexpppo_0p6b_g09", "pricing_cheatexpppo_0p6b_g09_s1"]),
               (r"\quad not credited", False, ["pricing_cheatexpnc_0p6b_g09"]),
               (r"\quad war price, no cheat", False, ["pricing_cheatexppl_0p6b_g09"]),
@@ -351,6 +354,7 @@ def main():
                      ("pricing_cheatexpnc_0p6b_g09", "CheatExpNoCredit"), ("pricing_cheatexppl_0p6b_g09", "CheatExpPlacebo"),
                      ("pricing_cheatexp03_0p6b_g09", "CheatExpLow"), ("pricing_cheatexp_llama1b_fp_g09", "CheatExpLlama"),
                      ("pricing_cheatexp_llama1b_fp_g09_s1", "CheatExpLlamaSeed"),
+                     ("pricing_cheatexp_4b_g09", "CheatExpFourB"), ("pricing_cheatexp_4b_g09_s1", "CheatExpFourBSeed"),
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
                      ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo"),
