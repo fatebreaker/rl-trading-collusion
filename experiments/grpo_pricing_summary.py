@@ -534,6 +534,21 @@ def main():
             out[f"base_placebo_{base}"] = {"per_unit": u, "gain": (t["cum_gain_dev"], t["cum_gain_dev_ci95"])}
         else:
             macros[f"{bk}PlaceboUnit"] = macros[f"{bk}PlaceboBench"] = "--"
+    # a price shown in the prompt ("Reference price: 1.34.", a war against any cheat): how often the untrained Qwen3-0.6B
+    # and the first cheater-trained policy, each paired with itself, post exactly that price with the line (and, "No",
+    # without it: their main audits), over all periods and in the first, before any rival price is shown
+    for f, key in (("base_qwen3p0p6b_duopoly", "GrpoBaseRef"), ("pricing_cheat_0p6b_g09_adapter_0199_duopoly", "GrpoCheatFwdRef")):
+        for tag, sfx in (("_ref134_k1", ""), ("_k1", "No")):
+            fr = os.path.join(ROOT, "results", "grpo_pricing_audit", f + tag + ".json")
+            dr = json.load(open(fr)) if os.path.exists(fr) and os.path.getsize(fr) > 0 else {}
+            if "prices_sessions" in dr:
+                P = np.asarray(dr["prices_sessions"], float)
+                at = np.abs(P - 1.34) < 0.005
+                macros[f"{key}{sfx}Share"] = f"{int(np.floor(100 * at.mean() + 0.5))}"
+                macros[f"{key}{sfx}First"] = f"{int(np.floor(100 * at[:, 0].mean() + 0.5))}"
+                macros[f"{key}{sfx}Median"] = f"{np.median(P):.2f}"
+            else:
+                macros[f"{key}{sfx}Share"] = macros[f"{key}{sfx}First"] = macros[f"{key}{sfx}Median"] = "--"
     # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
     # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
     for tag, key in (("cheat_vs_tft", "TftResp"), ("tft_vs_cheat", "CheatResp")):
