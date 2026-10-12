@@ -595,6 +595,8 @@ def main():
             v = [x for x in (fx(out[k]["pair"]) for k in ps) if np.isfinite(x)]
             macros[f"GrpoCheatPrem{nm}Min"] = fm.format(min(v)) if v else "--"
             macros[f"GrpoCheatPrem{nm}Max"] = fm.format(max(v)) if v else "--"
+            lo_, hi_ = macros[f"GrpoCheatPrem{nm}Min"], macros[f"GrpoCheatPrem{nm}Max"]
+            macros[f"GrpoCheatPrem{nm}Range"] = lo_ if lo_ == hi_ else f"{lo_}$--${hi_}"  # in math mode
         nw = []
         for k in cs:
             L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
