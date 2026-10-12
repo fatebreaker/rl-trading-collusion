@@ -139,6 +139,39 @@ def rivals_table(out):
     open(os.path.join(ROOT, "paper", "table_grpo_rivals.tex"), "w").write("\n".join(L) + "\n")
 
 
+def refprobe_table():
+    """Appendix table: the reference-price probe per policy and seed ("Reference price: 1.34." added to every
+    period's prompt, each policy paired with itself): the share of first periods and of all periods at exactly
+    1.34, and the median price with the line and without it (the main audit)."""
+    A = os.path.join(ROOT, "results", "grpo_pricing_audit")
+    rows = [("Qwen3-0.6B, untrained", "--", "base_qwen3p0p6b_duopoly")]
+    for lab, pre, ad, seeds in (("vs tit-for-tat", "pricing_tft_0p6b_g09", "0149", ("", "_s1", "_s2")),
+                                ("vs cheater", "pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3")),
+                                ("vs cheater, PPO", "pricing_cheatppo_0p6b_g09", "0149", ("", "_s1", "_s2")),
+                                ("forced wars", "pricing_cheatexp_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3"))):
+        for s_ in seeds:
+            rows.append((lab, str(int(s_[2:]) if s_ else 0), f"{pre}{s_}_adapter_{ad}_duopoly"))
+    rows += [("Llama-3.2-1B, untrained", "--", "base_llamap3p2p1bpinstruct_duopoly"),
+             ("Llama, vs cheater", "1", "pricing_cheat_llama1b_fp_g09_s1_adapter_0199_duopoly"),
+             ("Llama, vs cheater", "2", "pricing_cheat_llama1b_fp_g09_s2_adapter_0199_duopoly"),
+             ("Llama, forced wars", "0", "pricing_cheatexp_llama1b_fp_g09_adapter_0199_duopoly")]
+    L = ["\\begin{tabular}{@{}llcccc@{}}", "\\toprule",
+         " & & \\multicolumn{2}{c}{at $1.34$ (\\%)} & \\multicolumn{2}{c}{median price} \\\\",
+         "\\cmidrule(lr){3-4}\\cmidrule(l){5-6}",
+         "policy & seed & first period & all periods & with line & without \\\\", "\\midrule"]
+    for lab, seed, f in rows:
+        fr, f0 = os.path.join(A, f + "_ref134_k1.json"), os.path.join(A, f + "_k1.json")
+        if not (os.path.exists(fr) and os.path.getsize(fr) > 0):
+            continue
+        P = np.asarray(json.load(open(fr))["prices_sessions"], float)
+        at = np.abs(P - 1.34) < 0.005
+        P0 = np.asarray(json.load(open(f0))["prices_sessions"], float) if os.path.exists(f0) else None
+        L.append(f"{lab} & {seed} & ${100 * at[:, 0].mean():.0f}$ & ${100 * at.mean():.0f}$ & ${np.median(P):.2f}$ & "
+                 + (f"${np.median(P0):.2f}$" if P0 is not None else "--") + " \\\\")
+    L += ["\\bottomrule", "\\end{tabular}"]
+    open(os.path.join(ROOT, "paper", "table_refprobe.tex"), "w").write("\n".join(L) + "\n")
+
+
 def tally_table(out):
     """Main-text table: what each training setup teaches, counted over its runs (seeds). A run counts once its pair
     is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
@@ -600,7 +633,24 @@ def main():
     macros["GrpoRefRowNote"] = ("$^\\|$Every period's prompt also shows ``Reference price: 1.34.'' (a war against any "
                                 "cheat). " if (rr.get("train") or rr.get("pair")) and not training("pricing_cheatref_0p6b_g09")
                                 else "")
-    macros["GrpoRefTrainedN"] = words[len(first_trained)] if first_trained else "--"
+    # every trained Qwen3-0.6B policy probed (all seeds): how many, the smallest share of first periods at the shown
+    # price, and how many hold it (in at least 90% of all periods)
+    first_trained, hold = [], 0
+    for pre, ad, seeds in (("pricing_tft_0p6b_g09", "0149", ("", "_s1", "_s2")),
+                           ("pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3")),
+                           ("pricing_cheatppo_0p6b_g09", "0149", ("", "_s1", "_s2")),
+                           ("pricing_cheatexp_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3"))):
+        for s_ in seeds:
+            fr = os.path.join(ROOT, "results", "grpo_pricing_audit", f"{pre}{s_}_adapter_{ad}_duopoly_ref134_k1.json")
+            if os.path.exists(fr) and os.path.getsize(fr) > 0:
+                at = np.abs(np.asarray(json.load(open(fr))["prices_sessions"], float) - 1.34) < 0.005
+                first_trained.append(at[:, 0].mean())
+                hold += at.mean() >= 0.9
+    nums = "none one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen".split()
+    macros["GrpoRefTrainedFirstMin"] = f"{int(np.floor(100 * min(first_trained)))}" if first_trained else "--"
+    macros["GrpoRefTrainedN"] = nums[len(first_trained)] if first_trained else "--"
+    macros["GrpoRefHoldN"] = nums[hold] if first_trained else "--"
+    macros["GrpoRefOpenN"] = nums[sum(x >= 0.97 for x in first_trained)] if first_trained else "--"
     # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
     # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
     for tag, key in (("cheat_vs_tft", "TftResp"), ("tft_vs_cheat", "CheatResp")):
@@ -645,6 +695,7 @@ def main():
         for k in ("Idx", "Prof", "CutUnit", "TenIdx"):
             macros.setdefault(bk + k, "--")
     rivals_table(out)
+    refprobe_table()
     macros.update(tally_table(out))
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
