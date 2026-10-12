@@ -102,8 +102,10 @@ def rivals_table(out):
             ("pricing_cheatexp03_0p6b_g09", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexp03_0p6b_g09_s1", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "1"),
             ("pricing_cheatexpppo_0p6b_g09", "wars added, PPO$^\\ddagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatexpppo_0p6b_g09_s1", "wars added, PPO$^\\ddagger$", "0.6B", "0.9", "1"),
             ("pricing_cheatuni_0p6b_g09", "random prices added$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatuni_0p6b_g09_s1", "random prices added$^\\ddagger$", "0.6B", "0.9", "1"),
+            ("pricing_cheatuni_0p6b_g09_s2", "random prices added$^\\ddagger$", "0.6B", "0.9", "2"),
             ("pricing_cheatexp_llama1b_fp_g09", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "0"),
             ("pricing_cheatexp_llama1b_fp_g09_s1", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "1"),
             ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
@@ -159,10 +161,11 @@ def tally_table(out):
                                                "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3"]),
               (r"\quad 3 in 100", False, ["pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
               (r"\quad Llama-3.2-1B", False, ["pricing_cheatexp_llama1b_fp_g09", "pricing_cheatexp_llama1b_fp_g09_s1"]),
-              (r"\quad PPO", False, ["pricing_cheatexpppo_0p6b_g09"]),
+              (r"\quad PPO", False, ["pricing_cheatexpppo_0p6b_g09", "pricing_cheatexpppo_0p6b_g09_s1"]),
               (r"\quad not credited", False, ["pricing_cheatexpnc_0p6b_g09"]),
               (r"\quad war price, no cheat", False, ["pricing_cheatexppl_0p6b_g09"]),
-              (r"\quad random prices instead", False, ["pricing_cheatuni_0p6b_g09", "pricing_cheatuni_0p6b_g09_s1"])]
+              (r"\quad random prices instead", False, ["pricing_cheatuni_0p6b_g09", "pricing_cheatuni_0p6b_g09_s1",
+                                                        "pricing_cheatuni_0p6b_g09_s2"])]
     L = ["\\begin{tabular}{@{}lcccc@{}}", "\\toprule",
          "Trained against & runs & war & premium & enforced \\\\", "\\midrule"]
     for name, tft, runs in groups:
@@ -315,6 +318,7 @@ def main():
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
                      ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo"),
+                     ("pricing_cheatexpppo_0p6b_g09_s1", "CheatExpPpoSeed"), ("pricing_cheatuni_0p6b_g09_s2", "CheatUniSeedTwo"),
                      ("pricing_cheatuni_0p6b_g09", "CheatUni"), ("pricing_cheatuni_0p6b_g09_s1", "CheatUniSeed"),
                      ("pricing_cheatref_0p6b_g09", "CheatRef")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
