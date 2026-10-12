@@ -180,7 +180,13 @@ def tally_table(out):
     words = "none one two three four five six seven eight nine ten".split()
     ro = [out[r] for g in groups[4:6] for r in g[2] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
     enf = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in ro)
-    return {"GrpoOtherEnf": f"{words[enf]} of {words[len(ro)]} pairs {'enforces' if enf == 1 else 'enforce'}"} if ro else {}
+    m = {"GrpoOtherEnf": f"{words[enf]} of {words[len(ro)]} pairs {'enforces' if enf == 1 else 'enforce'}"} if ro else {}
+    # the seeds with one forced war in ten whose copies enforce (war at the pair's own price), in words
+    rf = [out[r] for r in groups[7][2] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+    ef = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in rf)
+    if rf:
+        m["GrpoExpEnfOf"] = f"{words[ef]} of {words[len(rf)]}"
+    return m
 
 
 def main():
