@@ -62,6 +62,7 @@ def rivals_table(out):
             ("pricing_tft_0p6b_g09_s2", "tit-for-tat", "0.6B", "0.9", "2"), ("pricing_tft_0p6b_g0", "tit-for-tat", "0.6B", "0", "0"),
             ("pricing_cheat_0p6b_g09", "cheater", "0.6B", "0.9", "0"), ("pricing_cheat_0p6b_g09_s1", "cheater", "0.6B", "0.9", "1"),
             ("pricing_cheat_0p6b_g09_s2", "cheater", "0.6B", "0.9", "2"), ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
+            ("pricing_cheat_0p6b_g09_s4", "cheater", "0.6B", "0.9", "4"), ("pricing_cheat_0p6b_g09_s5", "cheater", "0.6B", "0.9", "5"),
             ("pricing_cheat_0p6b_g0", "cheater", "0.6B", "0", "0"),
             ("pricing_cheatppo_0p6b_g09", "cheater, PPO", "0.6B", "0.9", "0"),
             ("pricing_cheatppo_0p6b_g09_s1", "cheater, PPO", "0.6B", "0.9", "1"),
@@ -93,6 +94,7 @@ def rivals_table(out):
             ("pricing_cheatexp03_0p6b_g09_s1", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "1"),
             ("pricing_cheatexpppo_0p6b_g09", "wars added, PPO$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexp_llama1b_fp_g09", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "0"),
+            ("pricing_cheatexp_llama1b_fp_g09_s1", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "1"),
             ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexppl_0p6b_g09", "war price, no cheat$^\\ddagger$", "0.6B", "0.9", "0")]
 
@@ -130,7 +132,7 @@ def tally_table(out):
     pair's price index is 0.5 or more. Enforced: a premium, and a 10% cut from it loses (95% interval below zero)."""
     groups = [("Tit-for-tat", True, ["pricing_tft_0p6b_g09", "pricing_tft_0p6b_g09_s1", "pricing_tft_0p6b_g09_s2"]),
               ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
-                                  "pricing_cheat_0p6b_g09_s3"]),
+                                  "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5"]),
               (r"\quad PPO", False, ["pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1",
                                      "pricing_cheatppo_0p6b_g09_s2"]),
               (r"\quad Qwen3-1.7B, 4B", False, ["pricing_cheat_1p7b_g09", "pricing_cheat_1p7b_g09_s1",
@@ -257,6 +259,7 @@ def main():
                      ("pricing_cheat2self_0p6b_g09", "CheatSelf"),
                      ("pricing_cheat_4b_g09", "CheatBigFwd"), ("pricing_cheat_4b_g09_s1", "CheatBigFwdSeed"),
                      ("pricing_cheat_1p7b_g09_s1", "CheatMidFwdSeed"), ("pricing_cheat_0p6b_g09_s3", "CheatFwdSeedThree"),
+                     ("pricing_cheat_0p6b_g09_s4", "CheatFwdSeedFour"), ("pricing_cheat_0p6b_g09_s5", "CheatFwdSeedFive"),
                      ("pricing_tft_0p6b_g09_s2", "TftFwdSeedTwo"), ("pricing_cheatp03_0p6b_g09", "CheatPThree"),
                      ("pricing_cheatw09_0p6b_g09", "CheatWarNine"), ("pricing_cheatw30_0p6b_g09", "CheatWarThirty"),
                      ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo"),
@@ -270,6 +273,7 @@ def main():
                      ("pricing_cheatexp_0p6b_g09_s3", "CheatExpSeedThree"),
                      ("pricing_cheatexpnc_0p6b_g09", "CheatExpNoCredit"), ("pricing_cheatexppl_0p6b_g09", "CheatExpPlacebo"),
                      ("pricing_cheatexp03_0p6b_g09", "CheatExpLow"), ("pricing_cheatexp_llama1b_fp_g09", "CheatExpLlama"),
+                     ("pricing_cheatexp_llama1b_fp_g09_s1", "CheatExpLlamaSeed"),
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
                      ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo")):
