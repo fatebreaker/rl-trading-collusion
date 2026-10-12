@@ -424,6 +424,14 @@ def main():
     wa = [w for w in wa if w is not None and np.isfinite(w)]
     if wa:
         macros["GrpoCheatWarAllMin"], macros["GrpoCheatWarAllMax"] = f"{100 * min(wa):.2f}", f"{100 * max(wa):.2f}"
+    # the seeds with one answer to a cheat in ten forced to a war, once their pairs are audited: the range of the
+    # shares of their own answers to a cheat that are wars (last ten iterations)
+    fw = [out[k]["train"]["war_share"] for k in ("pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
+                                                 "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3")
+          if k in out and "index" in out[k].get("pair", {}) and not training(k) and "war_share" in out[k].get("train", {})]
+    if fw:
+        macros.update(GrpoCheatExpWarMin=f"{100 * min(fw):.0f}", GrpoCheatExpWarMax=f"{100 * max(fw):.0f}",
+                      GrpoCheatExpRuns=str(len(fw)))
     # the base models in the same state-matched placebo
     for base, bk in (("qwen3p0p6b", "GrpoBase"), ("llamap3p2p1bpinstruct", "GrpoBaseLlama")):
         fb = os.path.join(ROOT, "results", "grpo_pricing_audit", f"base_{base}_forced2_k1.json")
