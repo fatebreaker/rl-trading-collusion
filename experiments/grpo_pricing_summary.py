@@ -538,6 +538,14 @@ def main():
             nw.append(np.nansum([x["war_share"] * x["cheats_per_session"] * 32 for x in L]))
         lo, hi = f"{min(nw):.0f}", f"{max(nw):.0f}"
         macros.update(GrpoCheatPpoSeedsWord=words[len(pp)], GrpoCheatPpoWarsRange=lo if lo == hi else f"{lo} to {hi}")
+    # the seeds with random prices in place of the war, once trained: in how many the policy's own answers to a cheat
+    # became wars (at least 10% over the last ten iterations, as in Table 2), in words
+    un = [k for k in ("pricing_cheatuni_0p6b_g09", "pricing_cheatuni_0p6b_g09_s1", "pricing_cheatuni_0p6b_g09_s2")
+          if k in out and "war_share" in out[k].get("train", {}) and not training(k)]
+    if un:
+        lw = sum(out[k]["train"]["war_share"] >= 0.10 for k in un)
+        macros["GrpoUniLearnOf"] = ("both" if lw == len(un) == 2 else f"all {words[lw]}" if lw == len(un) > 2
+                                    else f"{words[lw]} of {words[len(un)]}")
         pa = [k for k in pp if audited(out[k])]
         if pa:
             enf = sum(out[k]["pair"]["index"][0] >= 0.5 and "cut_gain" in out[k]["pair"] and
