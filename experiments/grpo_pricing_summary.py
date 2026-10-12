@@ -537,18 +537,30 @@ def main():
     # a price shown in the prompt ("Reference price: 1.34.", a war against any cheat): how often the untrained Qwen3-0.6B
     # and the first cheater-trained policy, each paired with itself, post exactly that price with the line (and, "No",
     # without it: their main audits), over all periods and in the first, before any rival price is shown
-    for f, key in (("base_qwen3p0p6b_duopoly", "GrpoBaseRef"), ("pricing_cheat_0p6b_g09_adapter_0199_duopoly", "GrpoCheatFwdRef")):
-        for tag, sfx in (("_ref134_k1", ""), ("_k1", "No")):
+    # (and the trained policies' smallest share of first periods at it); the first policy also shown 1.70 (no war)
+    first_trained = []
+    for f, key in (("base_qwen3p0p6b_duopoly", "GrpoBaseRef"), ("pricing_cheat_0p6b_g09_adapter_0199_duopoly", "GrpoCheatFwdRef"),
+                   ("pricing_cheat_0p6b_g09_s1_adapter_0199_duopoly", "GrpoCheatFwdSeedRef"),
+                   ("pricing_cheat_0p6b_g09_s2_adapter_0199_duopoly", "GrpoCheatFwdSeedTwoRef"),
+                   ("pricing_cheat_0p6b_g09_s3_adapter_0199_duopoly", "GrpoCheatFwdSeedThreeRef"),
+                   ("pricing_cheatppo_0p6b_g09_adapter_0149_duopoly", "GrpoCheatPpoRef"),
+                   ("pricing_cheatexp_0p6b_g09_adapter_0199_duopoly", "GrpoCheatExpRef"),
+                   ("pricing_tft_0p6b_g09_adapter_0149_duopoly", "GrpoTftFwdRef")):
+        for tag, sfx, ref in (("_ref134_k1", "", 1.34), ("_k1", "No", 1.34), ("_ref170_k1", "Seven", 1.70)):
             fr = os.path.join(ROOT, "results", "grpo_pricing_audit", f + tag + ".json")
             dr = json.load(open(fr)) if os.path.exists(fr) and os.path.getsize(fr) > 0 else {}
             if "prices_sessions" in dr:
                 P = np.asarray(dr["prices_sessions"], float)
-                at = np.abs(P - 1.34) < 0.005
+                at = np.abs(P - ref) < 0.005
                 macros[f"{key}{sfx}Share"] = f"{int(np.floor(100 * at.mean() + 0.5))}"
                 macros[f"{key}{sfx}First"] = f"{int(np.floor(100 * at[:, 0].mean() + 0.5))}"
                 macros[f"{key}{sfx}Median"] = f"{np.median(P):.2f}"
+                if sfx == "" and not f.startswith("base_"):
+                    first_trained.append(at[:, 0].mean())
             else:
                 macros[f"{key}{sfx}Share"] = macros[f"{key}{sfx}First"] = macros[f"{key}{sfx}Median"] = "--"
+    macros["GrpoRefTrainedFirstMin"] = f"{int(np.floor(100 * min(first_trained)))}" if first_trained else "--"
+    macros["GrpoRefTrainedN"] = words[len(first_trained)] if first_trained else "--"
     # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
     # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
     for tag, key in (("cheat_vs_tft", "TftResp"), ("tft_vs_cheat", "CheatResp")):
