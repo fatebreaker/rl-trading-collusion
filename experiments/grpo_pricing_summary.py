@@ -207,11 +207,15 @@ def wartry_table():
     open(os.path.join(ROOT, "paper", "table_wartry.tex"), "w").write("\n".join(L) + "\n")
     if got:
         top = max(got, key=lambda x: x[1]["war_share"])
-        macros.update(GrpoTryN=words[len(got)], GrpoTryWarMax=pct(top[1]["war_share"]), GrpoTryWarMaxModel=top[0],
+        size = {"Qwen3-0.6B": 0.6, "Qwen3-1.7B": 1.7, "Qwen3-4B": 4, "Qwen3-8B": 8, "Qwen3-32B (4-bit)": 32,
+                "Llama-3.2-1B": 1, "Llama-3.2-3B": 3}
+        big = max(size[n] for n, _ in got)
+        macros.update(GrpoTryLargest=f"{big:g}B",  # the largest model measured, for the text
+                      GrpoTryN=words[len(got)], GrpoTryWarMax=pct(top[1]["war_share"]), GrpoTryWarMaxModel=top[0],
                       GrpoTryWarMin=pct(min(d["war_share"] for _, d in got)),
                       GrpoTryAboveMin=f"{100 * min(d['above_share'] for _, d in got):.0f}")
     else:
-        macros.update(GrpoTryN="--", GrpoTryWarMax="--", GrpoTryWarMaxModel="--", GrpoTryWarMin="--",
+        macros.update(GrpoTryLargest="--", GrpoTryN="--", GrpoTryWarMax="--", GrpoTryWarMaxModel="--", GrpoTryWarMin="--",
                       GrpoTryAboveMin="--")
     return macros
 
