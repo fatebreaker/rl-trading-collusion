@@ -100,6 +100,23 @@ outputs are the only "data" that cannot be regenerated exactly:
    in the paper's appendix (`--game pricing` for the pricing game; each run
    stores its arguments in `results/grpo/<run>/config.json`), then
    `grpo_audit.sh` (or `grpo_pricing_audit.sh`).
+   Pricing agents trained against scripted rivals: `grpo_train.py --game pricing
+   --rival tft` or `--rival cheater` (the cheater's design: `--cheat-prob`,
+   `--cheat-cut-min`, `--cheat-cut-max`, `--war-margin`, `--deter-len`); forced
+   wars `--explore-war 0.1` (left out of the update: `--explore-credit false`;
+   the war price where no cheat came: `--explore-placebo 0.03`; random prices
+   instead: `--explore-uniform 0.1`); PPO `--algo ppo`; a price shown in every
+   prompt `--reference-price 1.34`; Llama's format penalty `--format-penalty
+   true`. Further tests of a trained pair (`grpo_pricing_extra.sh <run> <adapter>
+   <gpu> <tag> [llm_bertrand args]`): a forced hold at twice cost (`forced2_k1
+   --scale 1 --sessions 120 --periods 8 --force-price 2.0 --force-periods 8
+   --dev-events 1 --dev-gap 0 --dev-horizon 8 --dev-cut 0.1 --no-br-test`), cut
+   sizes (`duopoly_k1_cutsz05 --scale 1 --sessions 40 --periods 100 --dev-events 3
+   --dev-horizon 8 --no-br-test --dev-cut 0.05`, likewise 0.02, 0.10, 0.20) and a
+   shown price (`duopoly_ref134_k1`, the same with `--reference-price 1.34`). How
+   often untrained models try the price war: `war_try_rates.py --model <model>`;
+   tabular Q-learners against the cheater: `qlearn_cheater.py`; Table 2, the
+   appendix tables and the macros of the RL results: `grpo_pricing_summary.py`.
    Pricing agents: `experiments/llm_bertrand.sh <gpu> <model> <tag>
    "duopoly:1 duopoly:10 myopic:1 trigger:1"`; the protocol of Fish et al.:
    `experiments/llm_bertrand.py --style fish --prefix P1 --model
