@@ -484,6 +484,22 @@ def main():
     if fw:
         macros.update(GrpoCheatExpWarMin=f"{100 * min(fw):.0f}", GrpoCheatExpWarMax=f"{100 * max(fw):.0f}",
                       GrpoCheatExpRuns=str(len(fw)))
+    # the PPO seeds against the cheater, once trained: in words; how many wars each sampled over all of training (a
+    # range, or one number for one seed); and, once their pairs are audited, how many enforce
+    pp = [k for k in ("pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1", "pricing_cheatppo_0p6b_g09_s2")
+          if k in out and "war_share" in out[k].get("train", {}) and not training(k)]
+    if pp:
+        nw = []
+        for k in pp:
+            L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
+            nw.append(np.nansum([x["war_share"] * x["cheats_per_session"] * 32 for x in L]))
+        lo, hi = f"{min(nw):.0f}", f"{max(nw):.0f}"
+        macros.update(GrpoCheatPpoSeedsWord=words[len(pp)], GrpoCheatPpoWarsRange=lo if lo == hi else f"{lo} to {hi}")
+        pa = [k for k in pp if "index" in out[k].get("pair", {})]
+        if pa:
+            enf = sum(out[k]["pair"]["index"][0] >= 0.5 and "cut_gain" in out[k]["pair"] and
+                      sum(out[k]["pair"]["cut_gain"]) < 0 for k in pa)
+            macros["GrpoCheatPpoEnfOf"] = f"{words[enf]} of {words[len(pa)]}"
     # the base models in the same state-matched placebo
     for base, bk in (("qwen3p0p6b", "GrpoBase"), ("llamap3p2p1bpinstruct", "GrpoBaseLlama")):
         fb = os.path.join(ROOT, "results", "grpo_pricing_audit", f"base_{base}_forced2_k1.json")
