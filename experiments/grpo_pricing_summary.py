@@ -501,6 +501,24 @@ def main():
             L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
             nw.append(sum(x["war_share"] * x["cheats_per_session"] * 32 for x in L))  # 32 sessions per iteration
         macros.update(GrpoCheatWarsMin=f"{min(nw):.0f}", GrpoCheatWarsMax=f"{max(nw):.0f}")
+    # the seeds of the first design that finished training, over their last ten iterations: the range of their price
+    # and answer indices, the largest war share (with the second design's), and the range of the share of groups
+    # whose samples all agree, which give no gradient
+    fin = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5")]
+           if k in out and "war_share" in out[k].get("train", {}) and not training(k)]
+    if fin:
+        ix = [out[k]["train"]["final_index"] for k in fin]
+        ax = [out[k]["train"]["answer_index"] for k in fin]
+        wx = [out[k]["train"]["war_share"] for k in fin + ["pricing_cheatnash_0p6b_g09"]
+              if k in out and "war_share" in out[k].get("train", {})]
+        za = []
+        for k in fin:
+            L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
+            za.append(np.nanmean([x.get("zero_adv_share", np.nan) for x in L[-10:]]))
+        macros.update(GrpoCheatIdxMin=f"{min(ix):.2f}", GrpoCheatIdxMax=f"{max(ix):.2f}",
+                      GrpoCheatAnsIdxMin=f"{min(ax):.2f}", GrpoCheatAnsIdxMax=f"{max(ax):.2f}",
+                      GrpoCheatWarTenMax=f"{100 * np.nanmax(wx):.0f}", GrpoCheatFinWord=words[len(fin)],
+                      GrpoCheatZeroAdvMin=f"{100 * min(za):.0f}", GrpoCheatZeroAdvMax=f"{100 * max(za):.0f}")
     # the seeds with one answer to a cheat in ten forced to a war, once their pairs are audited: the range of the
     # shares of their own answers to a cheat that are wars (last ten iterations)
     fw = [out[k]["train"]["war_share"] for k in ("pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
