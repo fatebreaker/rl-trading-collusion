@@ -545,7 +545,12 @@ def main():
                    ("pricing_cheat_0p6b_g09_s3_adapter_0199_duopoly", "GrpoCheatFwdSeedThreeRef"),
                    ("pricing_cheatppo_0p6b_g09_adapter_0149_duopoly", "GrpoCheatPpoRef"),
                    ("pricing_cheatexp_0p6b_g09_adapter_0199_duopoly", "GrpoCheatExpRef"),
-                   ("pricing_tft_0p6b_g09_adapter_0149_duopoly", "GrpoTftFwdRef")):
+                   ("pricing_tft_0p6b_g09_adapter_0149_duopoly", "GrpoTftFwdRef"),
+                   # Llama-3.2-1B (format penalty): untrained, cheater-trained seeds 1 and 2, forced-war seed 0
+                   ("base_llamap3p2p1bpinstruct_duopoly", "GrpoBaseLlamaRef"),
+                   ("pricing_cheat_llama1b_fp_g09_s1_adapter_0199_duopoly", "GrpoCheatLlamaFpSeedRef"),
+                   ("pricing_cheat_llama1b_fp_g09_s2_adapter_0199_duopoly", "GrpoCheatLlamaFpSeedTwoRef"),
+                   ("pricing_cheatexp_llama1b_fp_g09_adapter_0199_duopoly", "GrpoCheatExpLlamaRef")):
         for tag, sfx, ref in (("_ref134_k1", "", 1.34), ("_k1", "No", 1.34), ("_ref170_k1", "Seven", 1.70)):
             fr = os.path.join(ROOT, "results", "grpo_pricing_audit", f + tag + ".json")
             dr = json.load(open(fr)) if os.path.exists(fr) and os.path.getsize(fr) > 0 else {}
@@ -555,7 +560,7 @@ def main():
                 macros[f"{key}{sfx}Share"] = f"{int(np.floor(100 * at.mean() + 0.5))}"
                 macros[f"{key}{sfx}First"] = f"{int(np.floor(100 * at[:, 0].mean() + 0.5))}"
                 macros[f"{key}{sfx}Median"] = f"{np.median(P):.2f}"
-                if sfx == "" and not f.startswith("base_"):
+                if sfx == "" and not f.startswith("base_") and "llama" not in f:  # the trained Qwen3-0.6B policies
                     first_trained.append(at[:, 0].mean())
             else:
                 macros[f"{key}{sfx}Share"] = macros[f"{key}{sfx}First"] = macros[f"{key}{sfx}Median"] = "--"
