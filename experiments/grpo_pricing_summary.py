@@ -69,6 +69,7 @@ def rivals_table(out):
             ("pricing_cheatppo_0p6b_g09_s1", "cheater, PPO", "0.6B", "0.9", "1"),
             ("pricing_cheatppo_0p6b_g09_s2", "cheater, PPO", "0.6B", "0.9", "2"),
             ("pricing_cheat2self_0p6b_g09", "cheater, then self", "0.6B", "0.9", "0"),
+            ("pricing_cheatref_0p6b_g09", "cheater, war price shown$^\\|$", "0.6B", "0.9", "0"),
             ("pricing_cheat_1p7b_g09", "cheater", "1.7B", "0.9", "0"), ("pricing_cheat_1p7b_g09_s1", "cheater", "1.7B", "0.9", "1"),
             ("pricing_cheat_4b_g09", "cheater", "4B", "0.9", "0"), ("pricing_cheat_4b_g09_s1", "cheater", "4B", "0.9", "1"),
             ("pricing_tft_llama1b_g09", "tit-for-tat", "Llama 1B", "0.9", "0"),
@@ -179,11 +180,15 @@ def tally_table(out):
     open(os.path.join(ROOT, "paper", "table_rl_tally.tex"), "w").write("\n".join(L) + "\n")
     # the pairs of other sizes and of the second family trained against the cheater: how many enforce, in words
     words = "none one two three four five six seven eight nine ten".split()
-    ro = [out[r] for g in groups[4:6] for r in g[2] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+    by = {}  # each group's runs by its row name (first occurrence: the unforced rows come before the forced ones)
+    for g in groups:
+        by.setdefault(g[0], g[2])
+    ro = [out[r] for k in (r"\quad Qwen3-1.7B, 4B", r"\quad Llama-3.2-1B") for r in by[k]
+          if r in out and "index" in out[r].get("pair", {}) and not training(r)]
     enf = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in ro)
     m = {"GrpoOtherEnf": f"{words[enf]} of {words[len(ro)]} pairs {'enforces' if enf == 1 else 'enforce'}"} if ro else {}
     # the seeds with one forced war in ten whose copies enforce (war at the pair's own price), in words
-    rf = [out[r] for r in groups[7][2] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+    rf = [out[r] for r in by["Cheater, wars forced"] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
     ef = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in rf)
     if rf:
         m["GrpoExpEnfOf"] = f"{words[ef]} of {words[len(rf)]}"
@@ -303,7 +308,8 @@ def main():
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
                      ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo"),
-                     ("pricing_cheatuni_0p6b_g09", "CheatUni"), ("pricing_cheatuni_0p6b_g09_s1", "CheatUniSeed")):
+                     ("pricing_cheatuni_0p6b_g09", "CheatUni"), ("pricing_cheatuni_0p6b_g09_s1", "CheatUniSeed"),
+                     ("pricing_cheatref_0p6b_g09", "CheatRef")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost", "PairAtCost",
