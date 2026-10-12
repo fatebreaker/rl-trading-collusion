@@ -186,6 +186,10 @@ def tally_table(out):
     ef = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in rf)
     if rf:
         m["GrpoExpEnfOf"] = f"{words[ef]} of {words[len(rf)]}"
+        # ... and those whose war stays where it was forced: a premium that a 10% cut still beats
+        tied = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) - 2 *
+                   r["pair"]["cut_gain"][1] > 0 for r in rf)
+        m["GrpoExpTiedOf"] = f"{words[tied]} of {words[len(rf)]}"
     return m
 
 
@@ -302,7 +306,7 @@ def main():
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost", "PairAtCost",
-                                     "PairZero", "PairCostFirst", "PairCostLast", "PairNashFirst", "PairNashLast", "PairNashN",
+                                     "PairZero", "PairCostFirst", "PairCostLast", "PairNashFirst", "PairNashLast", "PairNashN", "WarsN", "AnsN",
                                      "ExplVar", "UniWar")
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo",
                                                                      "MonoEarly", "MonoLate", "TwiceEarly", "TwiceLate")
@@ -340,6 +344,8 @@ def main():
                 ok = np.isfinite(wv) & (cw > 0)
                 r["train"]["war_share_all"] = float((wv[ok] * cw[ok]).sum() / cw[ok].sum()) if ok.any() else float("nan")
                 m.update(WarAll=f"{100 * r['train']['war_share_all']:.2f}")
+                # over all of training: how many answers to a cheat were wars, and how many answers (32 sessions)
+                m.update(WarsN=f"{(wv[ok] * cw[ok]).sum() * 32:.0f}", AnsN=f"{cw.sum() * 32:,.0f}".replace(",", "{,}"))
             if "uniform_war_share" in L[0]:  # uniform exploration: the drawn answers that are wars (all of training)
                 m["UniWar"] = f"{100 * np.nanmean([x['uniform_war_share'] for x in L]):.0f}"
             if "explained_var" in L[0]:  # PPO: the share of the return-to-go's variance the value explains
