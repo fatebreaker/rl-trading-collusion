@@ -71,6 +71,7 @@ def rivals_table(out):
             ("pricing_cheat_0p6b_g09", "cheater", "0.6B", "0.9", "0"), ("pricing_cheat_0p6b_g09_s1", "cheater", "0.6B", "0.9", "1"),
             ("pricing_cheat_0p6b_g09_s2", "cheater", "0.6B", "0.9", "2"), ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
             ("pricing_cheat_0p6b_g09_s4", "cheater", "0.6B", "0.9", "4"), ("pricing_cheat_0p6b_g09_s5", "cheater", "0.6B", "0.9", "5"),
+            ("pricing_cheat_0p6b_g09_s6", "cheater", "0.6B", "0.9", "6"), ("pricing_cheat_0p6b_g09_s7", "cheater", "0.6B", "0.9", "7"),
             ("pricing_cheat_0p6b_g0", "cheater", "0.6B", "0", "0"),
             ("pricing_cheatppo_0p6b_g09", "cheater, PPO", "0.6B", "0.9", "0"),
             ("pricing_cheatppo_0p6b_g09_s1", "cheater, PPO", "0.6B", "0.9", "1"),
@@ -179,7 +180,8 @@ def tally_table(out):
     groups = [("Tit-for-tat", True, ["pricing_tft_0p6b_g09", "pricing_tft_0p6b_g09_s1", "pricing_tft_0p6b_g09_s2"]),
               (r"\quad Qwen3-1.7B, Llama 1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
               ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
-                                  "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5"]),
+                                  "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5",
+                                  "pricing_cheat_0p6b_g09_s6", "pricing_cheat_0p6b_g09_s7"]),
               (r"\quad PPO", False, ["pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1",
                                      "pricing_cheatppo_0p6b_g09_s2"]),
               (r"\quad Qwen3-1.7B, 4B", False, ["pricing_cheat_1p7b_g09", "pricing_cheat_1p7b_g09_s1",
@@ -334,6 +336,7 @@ def main():
                      ("pricing_cheat_4b_g09", "CheatBigFwd"), ("pricing_cheat_4b_g09_s1", "CheatBigFwdSeed"),
                      ("pricing_cheat_1p7b_g09_s1", "CheatMidFwdSeed"), ("pricing_cheat_0p6b_g09_s3", "CheatFwdSeedThree"),
                      ("pricing_cheat_0p6b_g09_s4", "CheatFwdSeedFour"), ("pricing_cheat_0p6b_g09_s5", "CheatFwdSeedFive"),
+                     ("pricing_cheat_0p6b_g09_s6", "CheatFwdSeedSix"), ("pricing_cheat_0p6b_g09_s7", "CheatFwdSeedSeven"),
                      ("pricing_tft_0p6b_g09_s2", "TftFwdSeedTwo"), ("pricing_cheatp03_0p6b_g09", "CheatPThree"),
                      ("pricing_cheatw09_0p6b_g09", "CheatWarNine"), ("pricing_cheatw30_0p6b_g09", "CheatWarThirty"),
                      ("pricing_cheatw30_0p6b_g09_s1", "CheatWarThirtySeed"), ("pricing_cheatw30_0p6b_g0", "CheatWarThirtyMyo"),
@@ -509,7 +512,7 @@ def main():
             macros[f"Grpo{key}{f}"] = v[1:] if v.startswith("-0.00") else v
     # the seeds of the first design, once trained: the range of their war shares over all of training
     wa = [out[k]["train"].get("war_share_all") for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3",
-                                                                                                 "_s4", "_s5")]
+                                                                                                 "_s4", "_s5", "_s6", "_s7")]
           if k in out and "train" in out[k] and not training(k)]
     wa = [w for w in wa if w is not None and np.isfinite(w)]
     if wa:
@@ -517,7 +520,7 @@ def main():
     # the seeds of the first design whose pairs are audited, in words for the text: how many enforce (a premium a 10%
     # cut loses against) and how many hold no premium; and how many wars each sampled over all of training
     words = "none one two three four five six seven eight".split()
-    cs = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5")]
+    cs = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7")]
           if k in out and audited(out[k]) and not training(k)]
     if cs:
         prem = [out[k]["pair"]["index"][0] >= 0.5 for k in cs]
@@ -537,7 +540,7 @@ def main():
     # the seeds of the first design that finished training, over their last ten iterations: the range of their price
     # and answer indices, the largest war share (with the second design's), and the range of the share of groups
     # whose samples all agree, which give no gradient
-    fin = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5")]
+    fin = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7")]
            if k in out and "war_share" in out[k].get("train", {}) and not training(k)]
     if fin:
         ix = [out[k]["train"]["final_index"] for k in fin]
