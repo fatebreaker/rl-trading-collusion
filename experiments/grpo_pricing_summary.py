@@ -749,6 +749,21 @@ def main():
     macros["GrpoRefTrainedN"] = nums[len(first_trained)] if first_trained else "--"
     macros["GrpoRefHoldN"] = nums[hold] if first_trained else "--"
     macros["GrpoRefOpenN"] = nums[sum(x >= 0.97 for x in first_trained)] if first_trained else "--"
+    # the Qwen3-4B policies probed: how many, the smallest share of first periods at the shown price, and how many
+    # hold it (in at least 90% of all periods)
+    big_first, big_hold = [], 0
+    for pre in ("pricing_cheat_4b_g09", "pricing_cheatexp_4b_g09"):
+        for s_ in ("", "_s1", "_s2"):
+            fr = os.path.join(ROOT, "results", "grpo_pricing_audit", f"{pre}{s_}_adapter_0149_duopoly_ref134_k1.json")
+            if os.path.exists(fr) and os.path.getsize(fr) > 0:
+                at = np.abs(np.asarray(json.load(open(fr))["prices_sessions"], float) - 1.34) < 0.005
+                big_first.append(at[:, 0].mean())
+                big_hold += at.mean() >= 0.9
+    macros["GrpoRefBigN"] = nums[len(big_first)] if big_first else "--"
+    macros["GrpoRefBigHoldN"] = (("all " + nums[big_hold]) if big_hold == len(big_first) else nums[big_hold]) if big_first else "--"
+    macros["GrpoRefBigFirstMin"] = f"{int(np.floor(100 * min(big_first)))}" if big_first else "--"
+    macros["GrpoRefBigFirstText"] = ("in every first period" if big_first and min(big_first) == 1 else
+                                     f"in at least {macros['GrpoRefBigFirstMin']}\\% of their first periods")
     # cross-play (firm 0 deviates): the tit-for-tat-trained firm's response to the cheater-trained one's cut,
     # and the cheater-trained firm's response to the tit-for-tat-trained one's cut
     for tag, key in (("cheat_vs_tft", "TftResp"), ("tft_vs_cheat", "CheatResp")):
