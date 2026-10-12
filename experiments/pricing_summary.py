@@ -143,10 +143,10 @@ def main():
             table[f"{tag}_{cond}"] = row
             for m in ("PrIdx", "PrIdxCI", "PrProf", "PrProfCI", "PrWar", "PrAgg", "PrPass", "PrPassMean", "PrGain", "PrCutPass", "PrCutGain"):
                 macros.setdefault(f"{m}{key}", "--")
-    # the largest response of an in-context duopoly's rival to a best-response deviation (prices x1, first seeds,
+    # the largest response of an in-context duopoly's rival to a best-response deviation (prices x1, every seed,
     # Qwen3-32B aside), per unit of the cut, for the main text (compare the best-responder benchmark of App. G)
-    duo = [float(macros[f"PrPassMean{m}DuoOne"]) for m in ("Qwen", "QwenThink", "Mistral", "QwenFour", "Phi", "Olmo")
-           if macros.get(f"PrPassMean{m}DuoOne", "--") != "--"]
+    duo = [float(macros[f"PrPassMean{m}{s}"]) for m in ("Qwen", "QwenThink", "Mistral", "QwenFour", "Phi", "Olmo")
+           for s in ("DuoOne", "DuoOneSeedOne") if macros.get(f"PrPassMean{m}{s}", "--") != "--"]
     macros["PrPassDuoMax"] = f"{max(duo):.2f}" if duo else "--"
     os.makedirs(os.path.join(HERE, "..", "paper"), exist_ok=True)
     out = os.path.join(HERE, "..", "paper", "numbers_pricing.tex")

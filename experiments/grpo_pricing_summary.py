@@ -60,6 +60,7 @@ def rivals_table(out):
     """Appendix table: the GRPO pricing agents trained against scripted rivals, one row per run."""
     rows = [("pricing_tft_0p6b_g09", "tit-for-tat", "0.6B", "0.9", "0"), ("pricing_tft_0p6b_g09_s1", "tit-for-tat", "0.6B", "0.9", "1"),
             ("pricing_tft_0p6b_g09_s2", "tit-for-tat", "0.6B", "0.9", "2"), ("pricing_tft_0p6b_g0", "tit-for-tat", "0.6B", "0", "0"),
+            ("pricing_tft_1p7b_g09", "tit-for-tat", "1.7B", "0.9", "0"), ("pricing_tft_1p7b_g0", "tit-for-tat", "1.7B", "0", "0"),
             ("pricing_cheat_0p6b_g09", "cheater", "0.6B", "0.9", "0"), ("pricing_cheat_0p6b_g09_s1", "cheater", "0.6B", "0.9", "1"),
             ("pricing_cheat_0p6b_g09_s2", "cheater", "0.6B", "0.9", "2"), ("pricing_cheat_0p6b_g09_s3", "cheater", "0.6B", "0.9", "3"),
             ("pricing_cheat_0p6b_g09_s4", "cheater", "0.6B", "0.9", "4"), ("pricing_cheat_0p6b_g09_s5", "cheater", "0.6B", "0.9", "5"),
