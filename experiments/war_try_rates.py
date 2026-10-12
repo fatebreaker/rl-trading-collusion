@@ -42,12 +42,16 @@ def main(argv=None):
     ap.add_argument("--dtype", default="auto")
     ap.add_argument("--quantization", default=None)
     ap.add_argument("--attention-backend", default=None)
+    ap.add_argument("--max-num-seqs", type=int, default=64,
+                    help="a rollout runs 32 sessions at once; fewer sequences need less memory at start-up")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
 
     from vllm import LLM
 
     kw = {"attention_backend": a.attention_backend} if a.attention_backend else {}
+    if a.max_num_seqs:
+        kw["max_num_seqs"] = a.max_num_seqs
     if a.quantization:
         kw["quantization"] = a.quantization
     llm = LLM(model=a.model, gpu_memory_utilization=a.gpu_mem, max_model_len=4096, enable_prefix_caching=True,

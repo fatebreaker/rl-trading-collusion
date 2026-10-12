@@ -175,6 +175,47 @@ def refprobe_table():
     open(os.path.join(ROOT, "paper", "table_refprobe.tex"), "w").write("\n".join(L) + "\n")
 
 
+def wartry_table():
+    """Appendix table: how untrained models answer the cheating rival in the training game (first design, the
+    training prompt and episodes, 40 rollouts of 32 sessions, no training; experiments/war_try_rates.py): shares of
+    answers to a cheat that are wars, that match the cheat (within a cent), that undercut it short of a war, and that
+    price above it. Returns the macros (GrpoTry...)."""
+    W = os.path.join(ROOT, "results", "war_try")
+    models = [("Qwen3-0.6B", "QwenSix", "qwen3p0p6b"), ("Qwen3-1.7B", "QwenSeventeen", "qwen3p1p7b"),
+              ("Qwen3-4B", "QwenFour", "qwen3p4b"), ("Qwen3-8B", "QwenEight", "qwen3p8b"),
+              ("Qwen3-32B (4-bit)", "QwenThirtyTwo", "qwen3p32bawq"), ("Llama-3.2-1B", "LlamaOne", "llama3p2p1b"),
+              ("Llama-3.2-3B", "LlamaThree", "llama3p2p3b")]
+    pct = lambda x: f"{100 * x:.1f}"
+    words = "zero one two three four five six seven".split()
+    L = ["\\begin{tabular}{@{}lrrrrr@{}}", "\\toprule",
+         " & & \\multicolumn{4}{c}{answers to a cheat (\\%)} \\\\", "\\cmidrule(l){3-6}",
+         "model & answers & war & match & undercut & higher \\\\", "\\midrule"]
+    macros, got = {}, []
+    for name, key, tag in models:
+        fj = os.path.join(W, tag + ".json")
+        if not (os.path.exists(fj) and os.path.getsize(fj) > 0):
+            for s_ in ("War", "Match", "Below", "Above"):
+                macros[f"GrpoTry{key}{s_}"] = "--"
+            continue
+        d = json.load(open(fj))
+        got.append((name, d))
+        for s_, k in (("War", "war_share"), ("Match", "match_share"), ("Below", "below_share"), ("Above", "above_share")):
+            macros[f"GrpoTry{key}{s_}"] = pct(d[k])
+        L.append(f"{name} & {d['answers']:,} & ${pct(d['war_share'])}$ & ${pct(d['match_share'])}$ & "
+                 f"${pct(d['below_share'])}$ & ${pct(d['above_share'])}$ \\\\".replace(",", "{,}"))
+    L += ["\\bottomrule", "\\end{tabular}"]
+    open(os.path.join(ROOT, "paper", "table_wartry.tex"), "w").write("\n".join(L) + "\n")
+    if got:
+        top = max(got, key=lambda x: x[1]["war_share"])
+        macros.update(GrpoTryN=words[len(got)], GrpoTryWarMax=pct(top[1]["war_share"]), GrpoTryWarMaxModel=top[0],
+                      GrpoTryWarMin=pct(min(d["war_share"] for _, d in got)),
+                      GrpoTryAboveMin=f"{100 * min(d['above_share'] for _, d in got):.0f}")
+    else:
+        macros.update(GrpoTryN="--", GrpoTryWarMax="--", GrpoTryWarMaxModel="--", GrpoTryWarMin="--",
+                      GrpoTryAboveMin="--")
+    return macros
+
+
 def tally_table(out):
     """Main-text table: what each training setup teaches, counted over its runs (seeds). A run counts once its pair
     is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
@@ -536,6 +577,18 @@ def main():
         lo = stats.beta.ppf(0.025, e, n - e + 1) if e > 0 else 0.0
         hi = stats.beta.ppf(0.975, e + 1, n - e) if e < n else 1.0
         macros.update(GrpoCheatEnfLo=f"{100 * lo:.0f}", GrpoCheatEnfHi=f"{100 * hi:.0f}")
+        # over the seeds whose copies hold a premium (the per-seed passage of Appendix D): the range of the pair's
+        # price index, of how much of a 10% cut a copy follows (per unit), of the cut's gain over nine periods and of
+        # how much of the cut is still copied eight periods later
+        ps = [k for p, k in zip(prem, cs) if p]
+        macros.update(GrpoCheatPremOf=f"{words[len(ps)]} of {words[len(cs)]}")
+        for nm, fx, fm in (("Idx", lambda q: q["index"][0], "{:.2f}"),
+                           ("CutUnit", lambda q: q["cut_per_unit"][0] if "cut_per_unit" in q else np.nan, "{:.2f}"),
+                           ("CutGain", lambda q: q["cut_gain"][0] if "cut_gain" in q else np.nan, "{:+.2f}"),
+                           ("LagEight", lambda q: q["cut_by_lag"][-1] if "cut_by_lag" in q else np.nan, "{:.2f}")):
+            v = [x for x in (fx(out[k]["pair"]) for k in ps) if np.isfinite(x)]
+            macros[f"GrpoCheatPrem{nm}Min"] = fm.format(min(v)) if v else "--"
+            macros[f"GrpoCheatPrem{nm}Max"] = fm.format(max(v)) if v else "--"
         nw = []
         for k in cs:
             L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
@@ -703,6 +756,7 @@ def main():
             macros.setdefault(bk + k, "--")
     rivals_table(out)
     refprobe_table()
+    macros.update(wartry_table())
     macros.update(tally_table(out))
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
