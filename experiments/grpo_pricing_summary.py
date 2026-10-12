@@ -93,6 +93,8 @@ def rivals_table(out):
             ("pricing_cheatexp03_0p6b_g09", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "0"),
             ("pricing_cheatexp03_0p6b_g09_s1", "fewer wars added$^\\ddagger$", "0.6B", "0.9", "1"),
             ("pricing_cheatexpppo_0p6b_g09", "wars added, PPO$^\\ddagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatuni_0p6b_g09", "uniform prices added$^\\ddagger$", "0.6B", "0.9", "0"),
+            ("pricing_cheatuni_0p6b_g09_s1", "uniform prices added$^\\ddagger$", "0.6B", "0.9", "1"),
             ("pricing_cheatexp_llama1b_fp_g09", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "0"),
             ("pricing_cheatexp_llama1b_fp_g09_s1", "cheater, wars added$^\\ddagger$", "Llama 1B$^\\S$", "0.9", "1"),
             ("pricing_cheatexpnc_0p6b_g09", "wars added, uncredited$^\\ddagger$", "0.6B", "0.9", "0"),
@@ -142,6 +144,9 @@ def tally_table(out):
               (r"\quad wars forced", False, ["pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
                                              "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3",
                                              "pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
+              (r"\quad \enspace Llama-3.2-1B", False, ["pricing_cheatexp_llama1b_fp_g09",
+                                                     "pricing_cheatexp_llama1b_fp_g09_s1"]),
+              (r"\quad \enspace PPO", False, ["pricing_cheatexpppo_0p6b_g09"]),
               (r"\quad \enspace not credited, no cheat", False, ["pricing_cheatexpnc_0p6b_g09",
                                                                   "pricing_cheatexppl_0p6b_g09"])]
     L = ["\\begin{tabular}{@{}lcccc@{}}", "\\toprule",
@@ -276,11 +281,12 @@ def main():
                      ("pricing_cheatexp_llama1b_fp_g09_s1", "CheatExpLlamaSeed"),
                      ("pricing_cheatppo_0p6b_g09", "CheatPpo"), ("pricing_cheatppo_0p6b_g09_s1", "CheatPpoSeed"),
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo"),
-                     ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo")):
+                     ("pricing_cheatexp03_0p6b_g09_s1", "CheatExpLowSeed"), ("pricing_cheatexpppo_0p6b_g09", "CheatExpPpo"),
+                     ("pricing_cheatuni_0p6b_g09", "CheatUni"), ("pricing_cheatuni_0p6b_g09_s1", "CheatUniSeed")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
                                      "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost", "PairAtCost",
-                                     "PairZero", "PairCostFirst", "PairCostLast")
+                                     "PairZero", "PairCostFirst", "PairCostLast", "ExplVar", "UniWar")
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo",
                                                                      "MonoEarly", "MonoLate", "TwiceEarly", "TwiceLate")
                                              for f in ("Unit", "Gain", "Bench", "Peak"))
@@ -317,6 +323,10 @@ def main():
                 ok = np.isfinite(wv) & (cw > 0)
                 r["train"]["war_share_all"] = float((wv[ok] * cw[ok]).sum() / cw[ok].sum()) if ok.any() else float("nan")
                 m.update(WarAll=f"{100 * r['train']['war_share_all']:.2f}")
+            if "uniform_war_share" in L[0]:  # uniform exploration: the drawn answers that are wars (all of training)
+                m["UniWar"] = f"{100 * np.nanmean([x['uniform_war_share'] for x in L]):.0f}"
+            if "explained_var" in L[0]:  # PPO: the share of the return-to-go's variance the value explains
+                m["ExplVar"] = f"{100 * np.nanmean([x['explained_var'] for x in tail]):.0f}"
             if "own_other_war_share" in L[0]:  # the policy's own war prices where it answers no cheat
                 r["train"]["other_war_share"] = float(np.nanmean([x["own_other_war_share"] for x in tail]))
                 m.update(OtherWar=f"{100 * r['train']['other_war_share']:.1f}",
