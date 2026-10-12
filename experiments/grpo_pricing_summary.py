@@ -149,7 +149,8 @@ def refprobe_table():
     A = os.path.join(ROOT, "results", "grpo_pricing_audit")
     rows = [("Qwen3-0.6B, untrained", "--", "base_qwen3p0p6b_duopoly")]
     for lab, pre, ad, seeds in (("vs tit-for-tat", "pricing_tft_0p6b_g09", "0149", ("", "_s1", "_s2")),
-                                ("vs cheater", "pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3")),
+                                ("vs cheater", "pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3", "_s4", "_s5",
+                                                                                  "_s6", "_s7")),
                                 ("vs cheater, PPO", "pricing_cheatppo_0p6b_g09", "0149", ("", "_s1", "_s2")),
                                 ("forced wars", "pricing_cheatexp_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3"))):
         for s_ in seeds:
@@ -709,7 +710,7 @@ def main():
     # price, and how many hold it (in at least 90% of all periods)
     first_trained, hold = [], 0
     for pre, ad, seeds in (("pricing_tft_0p6b_g09", "0149", ("", "_s1", "_s2")),
-                           ("pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3")),
+                           ("pricing_cheat_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3", "_s4", "_s5", "_s6", "_s7")),
                            ("pricing_cheatppo_0p6b_g09", "0149", ("", "_s1", "_s2")),
                            ("pricing_cheatexp_0p6b_g09", "0199", ("", "_s1", "_s2", "_s3"))):
         for s_ in seeds:
@@ -718,7 +719,8 @@ def main():
                 at = np.abs(np.asarray(json.load(open(fr))["prices_sessions"], float) - 1.34) < 0.005
                 first_trained.append(at[:, 0].mean())
                 hold += at.mean() >= 0.9
-    nums = "none one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen".split()
+    nums = ("none one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen "
+            "seventeen eighteen nineteen twenty").split()
     macros["GrpoRefTrainedFirstMin"] = f"{int(np.floor(100 * min(first_trained)))}" if first_trained else "--"
     macros["GrpoRefTrainedN"] = nums[len(first_trained)] if first_trained else "--"
     macros["GrpoRefHoldN"] = nums[hold] if first_trained else "--"
