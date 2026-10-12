@@ -177,7 +177,7 @@ def tally_table(out):
         prem = [r["pair"]["index"][0] >= 0.5 for r in rs]
         enf = sum(p and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for p, r in zip(prem, rs))
         pend = f" % {len(runs) - n} pending" if n < len(runs) else ""
-        L.append(f"{name} & {n} & {'--' if tft else war} & {sum(prem)} & {enf} \\\\" + pend)
+        L.append(f"{name} & {n} & {'n/a' if tft else war} & {sum(prem)} & {enf} \\\\" + pend)  # n/a: no cheats to answer
         if name.endswith("other cheating rivals"):  # tabular Q-learners vs the same cheater (experiments/qlearn_cheater.py)
             fq = os.path.join(ROOT, "results", "qlearn_cheater", "g09.json")
             if os.path.exists(fq):
