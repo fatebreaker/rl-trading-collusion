@@ -230,7 +230,8 @@ def main():
                      ("pricing_cheatppo_0p6b_g09_s2", "CheatPpoSeedTwo")):
         r, m = {}, {f: "--" for f in ("Idx", "Prof", "Iters", "PairIdx", "PairTenIdx", "PairProf", "PairCutUnit",
                                      "PairGain", "PairCutGain", "War", "WarFirst", "WarAll", "AnsIdx", "Cheats",
-                                     "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost")
+                                     "PairBRUnit", "PairCutBench", "PairLagEight", "PairStray", "PairTenAtCost", "PairAtCost",
+                                     "PairZero", "PairCostFirst", "PairCostLast")
                                      + tuple(f"Pair{k}{f}" for k in ("Rise", "Shade", "Long", "TenCut", "Placebo",
                                                                      "MonoEarly", "MonoLate", "TwiceEarly", "TwiceLate")
                                              for f in ("Unit", "Gain", "Bench", "Peak"))
@@ -276,6 +277,15 @@ def main():
             r["pair"] = {"index": tci(d["per_session"]["index"]), "profit_over_nash": tci(d["per_session"]["profit_over_nash"]),
                          "bench": benchmarks(np.asarray(d["prices_sessions"], float), d["args"]["scale"])}
             m.update(PairIdx=f"{r['pair']['index'][0]:.2f}", PairProf=f"{r['pair']['profit_over_nash'][0]:.2f}")
+            # sessions whose copies end at or below cost (second half), at a price of zero, and the period (from 1)
+            # in which both firms first price at or below cost
+            P1, c1 = np.asarray(d["prices_sessions"], float), d["bench"]["cost"]
+            h1 = P1[:, P1.shape[1] // 2:]
+            m["PairAtCost"] = str(int(((h1 <= 1.05 * c1).mean(axis=(1, 2)) > 0.5).sum()))
+            m["PairZero"] = str(int((np.median(h1.reshape(len(h1), -1), axis=1) < 0.05 * c1).sum()))
+            first = [int(np.argmax(b)) + 1 for b in (P1 <= c1).all(axis=2) if b.any()]
+            if first:
+                m.update(PairCostFirst=str(min(first)), PairCostLast=str(max(first)))
             if d.get("deviation"):
                 g, gc = d["deviation"]["cum_gain_dev"], d["deviation"]["cum_gain_dev_ci95"]
                 r["pair"]["br_gain"] = (g, gc)
