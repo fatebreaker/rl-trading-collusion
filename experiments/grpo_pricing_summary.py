@@ -210,6 +210,12 @@ def wartry_table():
         top = max(got, key=lambda x: x[1]["war_share"])
         size = {"Qwen3-0.6B": 0.6, "Qwen3-1.7B": 1.7, "Qwen3-4B": 4, "Qwen3-8B": 8, "Qwen3-32B (4-bit)": 32,
                 "Llama-3.2-1B": 1, "Llama-3.2-3B": 3}
+        # the Qwen3 models larger than the one we train, pooled: wars among all their answers to a cheat
+        big_q = [d for n, d in got if n.startswith("Qwen3") and n != "Qwen3-0.6B"]
+        if big_q:
+            macros.update(GrpoTryBigQwenWars=str(sum(d["wars"] for d in big_q)),
+                          GrpoTryBigQwenAns=f"{sum(d['answers'] for d in big_q):,}".replace(",", "{,}"),
+                          GrpoTryBigQwenWord=words[len(big_q)])
         big = max(size[n] for n, _ in got)
         macros.update(GrpoTryLargest=f"{big:g}B",  # the largest model measured, for the text
                       GrpoTryN=words[len(got)], GrpoTryWarMax=pct(top[1]["war_share"]), GrpoTryWarMaxModel=top[0],
