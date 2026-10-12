@@ -48,6 +48,7 @@ class PricingConfig:
     temperature: float = 0.7
     max_tokens: int = 300
     instructions: str = ""      # appended to the system prompt (positive control)
+    reference_price: float = 0.0  # > 0: each period's prompt shows "Reference price: <this x scale>." (ours style)
     style: str = "ours"         # ours | fish (the prompt of Fish et al., EC'26, Appendix G)
     prefix: str = "P1"          # fish style: prompt prefix P1 or P2
     quantity_scale: float = 100.0  # fish style: quantities and profits shown x100 (their beta)
@@ -294,6 +295,8 @@ class LLMPricers:
             return self.fish_prompt(s, i)
         rows = self.hist[s][i][-self.cfg.history:]
         lines = [f"Period {self.t + 1}."]
+        if self.cfg.reference_price > 0:  # a number in the prompt the policy can copy (e.g. a war price)
+            lines.append(f"Reference price: {_fmt(self.cfg.reference_price * self.cfg.scale)}.")
         if rows:
             lines.append(f"Market history, last {len(rows)} periods (most recent last):")
             lines.append("period | your price | other firm's price | your quantity | your profit")

@@ -70,6 +70,8 @@ def main(argv=None):
                     help="state-matched placebo: both firms post this multiple of cost (no model calls) "
                          "for the first --force-periods periods, so the deviation tests start from that state")
     ap.add_argument("--force-periods", type=int, default=0)
+    ap.add_argument("--reference-price", type=float, default=0.0,
+                    help="show this price (x scale) in every period's prompt, as in training with --reference-price")
     ap.add_argument("--save-raw", action="store_true")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
@@ -77,7 +79,7 @@ def main(argv=None):
     fish = a.style == "fish"
     cfg = PricingConfig(scale=a.scale, history=a.history or (100 if fish else 30), notes=not a.no_notes,
                         objective="myopic" if a.condition == "myopic" else "long",
-                        temperature=a.temperature, style=a.style, prefix=a.prefix,
+                        temperature=a.temperature, style=a.style, prefix=a.prefix, reference_price=a.reference_price,
                         max_tokens=a.max_tokens or (8192 if a.thinking else (1200 if fish else 300)))
     env = PricingMarket(cfg, a.sessions)
     if a.condition == "trigger":

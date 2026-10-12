@@ -95,6 +95,7 @@ class GRPOConfig:
     explore_credit: bool = True  # credit the forced wars as if sampled (False: leave them out of the update)
     explore_placebo: float = 0.0  # control: share of answers to no cheat replaced by the same war price
     explore_uniform: float = 0.0  # share of answers to a cheat replaced by a price drawn uniformly between cost and p^M
+    reference_price: float = 0.0  # pricing: > 0 shows this price in every period's prompt (1.34 is a war against any cheat)
     format_penalty: bool = False  # pricing: an answer that does not parse earns nothing that period (training reward only)
     init_adapter: str = ""  # start from another run's adapter (e.g. continue a trained policy in self-play)
     # algo "ppo" (pricing only) replaces the group baseline by a learned value: a linear critic on the policy's last
@@ -314,7 +315,7 @@ def rollout_pricing(backend: PolicyBackend, cfg: GRPOConfig, seed: int):
         raise ValueError("war exploration is for training against the cheating rival")
     S = cfg.groups * cfg.group_size
     pcfg = PricingConfig(scale=cfg.price_scale, history=cfg.history, notes=cfg.notes,
-                         temperature=cfg.temperature, max_tokens=cfg.max_tokens)
+                         temperature=cfg.temperature, max_tokens=cfg.max_tokens, reference_price=cfg.reference_price)
     env = PricingMarket(pcfg, S)
     pricers = LLMPricers(env, pcfg, seed=seed, active=[0] if scripted else None)
     T = cfg.periods
