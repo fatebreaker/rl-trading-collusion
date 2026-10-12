@@ -133,6 +133,7 @@ def tally_table(out):
     is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
     pair's price index is 0.5 or more. Enforced: a premium, and a 10% cut from it loses (95% interval below zero)."""
     groups = [("Tit-for-tat", True, ["pricing_tft_0p6b_g09", "pricing_tft_0p6b_g09_s1", "pricing_tft_0p6b_g09_s2"]),
+              (r"\quad Qwen3-1.7B, Llama-3.2-1B", True, ["pricing_tft_1p7b_g09", "pricing_tft_llama1b_g09"]),
               ("Cheater", False, ["pricing_cheat_0p6b_g09", "pricing_cheat_0p6b_g09_s1", "pricing_cheat_0p6b_g09_s2",
                                   "pricing_cheat_0p6b_g09_s3", "pricing_cheat_0p6b_g09_s4", "pricing_cheat_0p6b_g09_s5"]),
               (r"\quad PPO", False, ["pricing_cheatppo_0p6b_g09", "pricing_cheatppo_0p6b_g09_s1",
@@ -141,14 +142,18 @@ def tally_table(out):
                                                 "pricing_cheat_4b_g09", "pricing_cheat_4b_g09_s1"]),
               (r"\quad Llama-3.2-1B", False, ["pricing_cheat_llama1b_g09", "pricing_cheat_llama1b_fp_g09_s1",
                                               "pricing_cheat_llama1b_fp_g09_s2", "pricing_cheat_llama1b_fp_g09_s3"]),
-              (r"\quad wars forced", False, ["pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
-                                             "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3",
-                                             "pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
-              (r"\quad \enspace Llama-3.2-1B", False, ["pricing_cheatexp_llama1b_fp_g09",
-                                                     "pricing_cheatexp_llama1b_fp_g09_s1"]),
-              (r"\quad \enspace PPO", False, ["pricing_cheatexpppo_0p6b_g09"]),
-              (r"\quad \enspace not credited, no cheat", False, ["pricing_cheatexpnc_0p6b_g09",
-                                                                  "pricing_cheatexppl_0p6b_g09"])]
+              # the other designs of the cheating rival (Appendix D): cheats less or more often, deeper, a cheaper war
+              (r"\quad other cheating rivals", False, ["pricing_cheatp03_0p6b_g09", "pricing_cheatw09_0p6b_g09",
+                                                       "pricing_cheatw30_0p6b_g09", "pricing_cheatw30_0p6b_g09_s1",
+                                                       "pricing_cheatnash_0p6b_g09", "pricing_cheatnash_ent05_0p6b_g09"]),
+              ("Cheater, wars forced", False, ["pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
+                                               "pricing_cheatexp_0p6b_g09_s2", "pricing_cheatexp_0p6b_g09_s3"]),
+              (r"\quad 3 in 100", False, ["pricing_cheatexp03_0p6b_g09", "pricing_cheatexp03_0p6b_g09_s1"]),
+              (r"\quad Llama-3.2-1B", False, ["pricing_cheatexp_llama1b_fp_g09", "pricing_cheatexp_llama1b_fp_g09_s1"]),
+              (r"\quad PPO", False, ["pricing_cheatexpppo_0p6b_g09"]),
+              (r"\quad not credited", False, ["pricing_cheatexpnc_0p6b_g09"]),
+              (r"\quad war price, no cheat", False, ["pricing_cheatexppl_0p6b_g09"]),
+              (r"\quad uniform prices instead", False, ["pricing_cheatuni_0p6b_g09", "pricing_cheatuni_0p6b_g09_s1"])]
     L = ["\\begin{tabular}{@{}lcccc@{}}", "\\toprule",
          "Trained against & runs & war & premium & enforced \\\\", "\\midrule"]
     for name, tft, runs in groups:
@@ -161,7 +166,7 @@ def tally_table(out):
         enf = sum(p and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for p, r in zip(prem, rs))
         pend = f" % {len(runs) - n} pending" if n < len(runs) else ""
         L.append(f"{name} & {n} & {'--' if tft else war} & {sum(prem)} & {enf} \\\\" + pend)
-        if name.endswith("Llama-3.2-1B"):  # tabular Q-learners against the same cheater (experiments/qlearn_cheater.py)
+        if name.endswith("other cheating rivals"):  # tabular Q-learners vs the same cheater (experiments/qlearn_cheater.py)
             fq = os.path.join(ROOT, "results", "qlearn_cheater", "g09.json")
             if os.path.exists(fq):
                 q = json.load(open(fq))
@@ -171,6 +176,11 @@ def tally_table(out):
                          f"{((qi >= 0.5) & (qg < 0)).sum()} \\\\")
     L += ["\\bottomrule", "\\end{tabular}"]
     open(os.path.join(ROOT, "paper", "table_rl_tally.tex"), "w").write("\n".join(L) + "\n")
+    # the pairs of other sizes and of the second family trained against the cheater: how many enforce, in words
+    words = "none one two three four five six seven eight nine ten".split()
+    ro = [out[r] for g in groups[4:6] for r in g[2] if r in out and "index" in out[r].get("pair", {}) and not training(r)]
+    enf = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in ro)
+    return {"GrpoOtherEnf": f"{words[enf]} of {words[len(ro)]} pairs {'enforces' if enf == 1 else 'enforce'}"} if ro else {}
 
 
 def main():
@@ -434,6 +444,21 @@ def main():
     wa = [w for w in wa if w is not None and np.isfinite(w)]
     if wa:
         macros["GrpoCheatWarAllMin"], macros["GrpoCheatWarAllMax"] = f"{100 * min(wa):.2f}", f"{100 * max(wa):.2f}"
+    # the seeds of the first design whose pairs are audited, in words for the text: how many enforce (a premium a 10%
+    # cut loses against) and how many hold no premium; and how many wars each sampled over all of training
+    words = "none one two three four five six seven eight".split()
+    cs = [k for k in [f"pricing_cheat_0p6b_g09{s}" for s in ("", "_s1", "_s2", "_s3", "_s4", "_s5")]
+          if k in out and "index" in out[k].get("pair", {}) and not training(k)]
+    if cs:
+        prem = [out[k]["pair"]["index"][0] >= 0.5 for k in cs]
+        enf = [p and "cut_gain" in out[k]["pair"] and sum(out[k]["pair"]["cut_gain"]) < 0 for p, k in zip(prem, cs)]
+        macros.update(GrpoCheatSeedsWord=words[len(cs)], GrpoCheatEnfOf=f"{words[sum(enf)]} of {words[len(cs)]}",
+                      GrpoCheatNoPremOf=f"{words[len(cs) - sum(prem)]} of {words[len(cs)]}")
+        nw = []
+        for k in cs:
+            L = [json.loads(x) for x in open(os.path.join(ROOT, "results", "grpo", k, "log.jsonl")) if x.strip()]
+            nw.append(sum(x["war_share"] * x["cheats_per_session"] * 32 for x in L))  # 32 sessions per iteration
+        macros.update(GrpoCheatWarsMin=f"{min(nw):.0f}", GrpoCheatWarsMax=f"{max(nw):.0f}")
     # the seeds with one answer to a cheat in ten forced to a war, once their pairs are audited: the range of the
     # shares of their own answers to a cheat that are wars (last ten iterations)
     fw = [out[k]["train"]["war_share"] for k in ("pricing_cheatexp_0p6b_g09", "pricing_cheatexp_0p6b_g09_s1",
@@ -498,7 +523,7 @@ def main():
         for k in ("Idx", "Prof", "CutUnit", "TenIdx"):
             macros.setdefault(bk + k, "--")
     rivals_table(out)
-    tally_table(out)
+    macros.update(tally_table(out))
     json.dump(out, open(os.path.join(ROOT, "results", "grpo_pricing_summary.json"), "w"), indent=1)
     os.makedirs(os.path.join(ROOT, "paper"), exist_ok=True)
     with open(os.path.join(ROOT, "paper", "numbers_grpopricing.tex"), "w") as fh:
