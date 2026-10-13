@@ -234,6 +234,15 @@ def wartry_table():
     return macros
 
 
+
+def enforces(pair):
+    """Table 2's rule: the pair holds a premium (index 0.5 or more), a copy follows a 10% cut by more than a best
+    responder would (the lower end of its 95% interval above the best-response slope), and the cut loses (the upper
+    end of its 95% interval below zero)."""
+    return (pair.get("index", [0])[0] >= 0.5 and "cut_gain" in pair and sum(pair["cut_gain"]) < 0 and
+            "cut_per_unit" in pair and pair["cut_per_unit"][0] - pair["cut_per_unit"][1] > pair["bench"]["cut_slope"])
+
+
 def tally_table(out):
     """Main-text table: what each training setup teaches, counted over its runs (seeds). A run counts once its pair
     is audited. War: its own answers to a cheat are wars in at least 10% of cases (last ten iterations). Premium: the
@@ -275,7 +284,7 @@ def tally_table(out):
             L.append(f"% {name}: {len(runs)} pending"); continue
         war = sum(r["train"].get("war_share", 0) >= 0.10 for r in rs)
         prem = [r["pair"]["index"][0] >= 0.5 for r in rs]
-        enf = sum(p and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for p, r in zip(prem, rs))
+        enf = sum(enforces(r["pair"]) for r in rs)
         pend = f" % {len(runs) - n} pending" if n < len(runs) else ""
         L.append(f"{name} & {n} & {'n/a' if tft else war} & {sum(prem)} & {enf} \\\\" + pend)  # n/a: no cheats to answer
         if name.endswith("other cheating rivals"):  # tabular Q-learners vs the same cheater (experiments/qlearn_cheater.py)
@@ -295,17 +304,36 @@ def tally_table(out):
         by.setdefault(g[0], g[2])
     ro = [out[r] for k in (r"\quad Qwen3-1.7B, 4B", r"\quad Llama-3.2-1B") for r in by[k]
           if r in out and audited(out[r]) and not training(r)]
-    enf = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in ro)
+    enf = sum(enforces(r["pair"]) for r in ro)
     m = {"GrpoOtherEnf": f"{words[enf]} of {words[len(ro)]} pairs {'enforces' if enf == 1 else 'enforce'}"} if ro else {}
     # the seeds with one forced war in ten whose copies enforce (war at the pair's own price), in words
     rf = [out[r] for r in by["Cheater, wars forced"] if r in out and audited(out[r]) and not training(r)]
-    ef = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) < 0 for r in rf)
+    ef = sum(enforces(r["pair"]) for r in rf)
     if rf:
         m["GrpoExpEnfOf"] = f"{words[ef]} of {words[len(rf)]}"
         # ... and those whose war stays where it was forced: a premium that a 10% cut still beats
         tied = sum(r["pair"]["index"][0] >= 0.5 and "cut_gain" in r["pair"] and sum(r["pair"]["cut_gain"]) - 2 *
                    r["pair"]["cut_gain"][1] > 0 for r in rf)
         m["GrpoExpTiedOf"] = f"{words[tied]} of {words[len(rf)]}"
+    # the Qwen3-4B and PPO forced-war seeds whose copies wage the war where they settle (a 10% cut loses there)
+    for key, name in (("GrpoExpFourBEnfOf", r"\quad Qwen3-4B"), ("GrpoExpPpoEnfOf", r"\quad PPO")):
+        rows_ = [g for g in groups if g[0] == name and not g[1]]
+        runs_ = rows_[-1][2] if rows_ else []
+        rr = [out[r] for r in runs_ if r in out and audited(out[r]) and not training(r)]
+        e_ = sum(enforces(r["pair"]) for r in rr)
+        m[key] = f"{words[e_]} of {words[len(rr)]}" if rr else "--"
+    # runs still training at the build, for the note under Table D.3
+    pend = lambda rs: [r for r in rs if not (r in out and audited(out[r]) and not training(r))]  # noqa: E731
+    ps_ = pend(["pricing_cheat_0p6b_g09_s6", "pricing_cheat_0p6b_g09_s8"])
+    pb_ = pend(["pricing_cheat_4b_g09_s2", "pricing_cheatexp_4b_g09_s2"])
+    parts = []
+    if ps_:
+        parts.append("cheater seed" + ("s " if len(ps_) > 1 else " ") + " and ".join(r[-1] for r in ps_))
+    if pb_:
+        parts.append("the third Qwen3-4B seed" + ("s (with and without forced wars)" if len(pb_) > 1 else
+                                                  (" with forced wars" if "cheatexp" in pb_[0] else " without forced wars")))
+    m["GrpoPendingNote"] = (" Seeds are numbered as launched; " + " and ".join(parts) +
+                            (" were" if len(ps_) + len(pb_) > 1 else " was") + " still training at submission.") if parts else ""
     return m
 
 
@@ -592,7 +620,7 @@ def main():
           if k in out and audited(out[k]) and not training(k)]
     if cs:
         prem = [out[k]["pair"]["index"][0] >= 0.5 for k in cs]
-        enf = [p and "cut_gain" in out[k]["pair"] and sum(out[k]["pair"]["cut_gain"]) < 0 for p, k in zip(prem, cs)]
+        enf = [enforces(out[k]["pair"]) for k in cs]
         macros.update(GrpoCheatSeedsWord=words[len(cs)], GrpoCheatEnfOf=f"{words[sum(enf)]} of {words[len(cs)]}",
                       GrpoCheatNoPremOf=f"{words[len(cs) - sum(prem)]} of {words[len(cs)]}")
         # the exact (Clopper-Pearson) 95% interval for the share of seeds whose copies enforce
@@ -682,8 +710,7 @@ def main():
                                     else f"{words[lw]} of {words[len(un)]}")
         pa = [k for k in pp if audited(out[k])]
         if pa:
-            enf = sum(out[k]["pair"]["index"][0] >= 0.5 and "cut_gain" in out[k]["pair"] and
-                      sum(out[k]["pair"]["cut_gain"]) < 0 for k in pa)
+            enf = sum(enforces(out[k]["pair"]) for k in pa)
             macros["GrpoCheatPpoEnfOf"] = (f"all {words[enf]}" if enf == len(pa) > 2 else
                                            f"{words[enf]} of {words[len(pa)]}")
     # the base models in the same state-matched placebo
