@@ -610,6 +610,10 @@ def main():
                       GrpoCheatPremLoseOf=f"{words[sum(enf)]} of {words[len(ps)]}",
                       GrpoCheatBrLoseOf=f"{words[brl]} of {words[len(cs)]}", GrpoCheatEnfN=str(sum(enf)),
                       GrpoCheatBrLoseN=str(brl), GrpoCheatSeedsN=str(len(cs)),
+                      # premium seeds whose copies lose the premium at prices x10 (index below 0.5)
+                      GrpoCheatPremTenLoseOf=f"{words[sum(out[k]['pair'].get('index_k10', [1.0])[0] < 0.5 for k in ps)]} of {words[len(ps)]}",
+                      # enforcing seeds whose 10% cut loses only narrowly (by less than 0.08 of a period's Nash profit)
+                      GrpoCheatEnfNarrowWord=words[sum(e and out[k]["pair"]["cut_gain"][0] > -0.08 for e, k in zip(enf, cs))],
                       GrpoCheatPremBrLoseOf=(f"all {words[len(ps)]}" if brl == len(ps) else
                                              f"{words[brl]} of {words[len(ps)]}"))
         # the premium seeds whose 10% cut pays in the audit: how many, in words, and the range of their gains
